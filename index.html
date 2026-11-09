@@ -392,6 +392,11 @@ button.cache:not(:disabled):hover .chest{transform:translateY(-2px)}
  .fstage .portrait .ground{width:112px;height:28px}
  .fightbtns .btn{min-height:42px;padding:6px}
 }
+
+.netdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#6b7280;margin-right:6px;vertical-align:1px}
+.netdot.on{background:#4ade80;box-shadow:0 0 6px #4ade80}
+.netstat{font:600 12px var(--f-data);color:var(--ink-2)}
+.netbox{border-color:var(--soul-dim)}
 </style>
 
 <div class="shell">
@@ -760,6 +765,85 @@ function refreshCost(){return MARKET_REFRESH_COST*Math.pow(2,S.mRefreshes||0)} /
 const ownedN=()=>Object.values(S.regions||{}).filter(Boolean).length;
 function fillMarket(){S.marketGen=(S.marketGen||0)+1;S.market=[];const mUsed=new Set();for(let i=0;i<40&&S.market.length<8;i++){const r=weighted([[1,50],[2,25],[3,15],[4,7],[5,2.5],[6,1]]);const bt=genBait(r);if(mUsed.has(bt.base))continue;mUsed.add(bt.base);S.market.push({lid:S.market.length+'-'+S.day+'-'+S.marketGen,bait:bt,price:Math.round(bt.p*rand(1.1,1.6)*(1+.06*Math.max(0,ownedN()-1))),seller:pick(NPCS)})}}
 const GENE_KEY_LEN=5;const geneKeyLen=()=>(S.stats&&S.stats.trips>=25)?5:4;
+
+/* ================= MULTIPLAYER (Supabase) =================
+   Real hunters share a bait market and global catch records. Each player gets a random secret
+   kept in this browser; the server only lets that secret act for that player. Everything
+   still works offline: the Temple traders and the local board stay as a fallback. */
+const NET={url:'https://mthklgfqtrpwdhiklpeo.supabase.co',key:'sb_publishable_jTN6RA_43tovHbqKqmph-w_iiS5QeIM',
+ ok:false,busy:false,id:null,secret:null,online:0,market:null,records:null,recordsAll:null,mine:null,err:'',at:{}};
+const NET_ID_KEY='soulgate.net.v1';
+async function rpc(fn,args){const c=new AbortController();const t=setTimeout(()=>c.abort(),9000);
+ try{const r=await fetch(`${NET.url}/rest/v1/rpc/${fn}`,{method:'POST',headers:{apikey:NET.key,'Content-Type':'application/json'},body:JSON.stringify(args||{}),signal:c.signal});
+  const tx=await r.text();let j=null;try{j=tx?JSON.parse(tx):null}catch(_){j=tx}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||('Server error '+r.status);throw new Error(m)}
+  NET.ok=true;NET.err='';return j}
+ catch(e){if(e.name==='AbortError'||/fetch|network|Load failed/i.test(String(e.message))){NET.ok=false;NET.err='offline'}throw e}
+ finally{clearTimeout(t)}}
+const me=()=>({p_id:NET.id,p_secret:NET.secret});
+function netLoadId(){try{const o=JSON.parse(localStorage.getItem(NET_ID_KEY)||'null');if(o&&o.id&&o.secret){NET.id=o.id;NET.secret=o.secret}}catch(_){}}
+function netNewSecret(){const a=new Uint8Array(24);crypto.getRandomValues(a);return [...a].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function netInit(){if(!S||NET.busy)return;NET.busy=true;
+ try{netLoadId();
+  if(!NET.id){const sec=netNewSecret();const id=await rpc('sg_register',{p_name:S.name,p_secret:sec});NET.id=id;NET.secret=sec;try{localStorage.setItem(NET_ID_KEY,JSON.stringify({id,secret:sec}))}catch(_){}}
+  await netBeat(true)}
+ catch(e){if(/unknown player/.test(e.message)){try{localStorage.removeItem(NET_ID_KEY)}catch(_){}NET.id=null}}
+ finally{NET.busy=false}}
+function netStats(){return{caught:S.stats.caught,earned:Math.round(S.stats.earned||0),trips:S.stats.trips,bestiary:Object.keys(S.bestiary||{}).length,rank:S.league?S.league.rank:0}}
+async function netBeat(first){if(!S||!NET.id)return;
+ try{await rpc('sg_heartbeat',{...me(),p_name:S.name,p_stats:netStats()});
+  NET.online=await rpc('sg_online',{});
+  await netFlush();await netCollect(first)}catch(_){}
+ if(['lab','system','temple'].includes(UI.screen)&&!document.querySelector('#main input:focus,#main select:focus'))render()}
+/* the seller side: money for sold baits, expired baits back */
+async function netCollect(quiet){if(!NET.id)return;const r=await rpc('sg_my_market',me());NET.mine=r.open||[];
+ let got=0;(r.sold||[]).forEach(x=>{const v=+x.price;S.money+=v;S.stats.earned=(S.stats.earned||0)+v;got+=v;news(`<b>${esc(x.buyer||'A hunter')}</b> bought your ${esc(x.bait&&x.bait.n||'bait')} for ${money(v)}.`)});
+ (r.expired||[]).forEach(b=>{const nb=netBait(b);if(nb){S.baits.push(nb);news(`Your listing for ${esc(nb.n)} expired; it is back in your locker.`)}});
+ if(got){sfx.coin();toast(`Your market sales paid ${money(got)}.`)}
+ if(got||(r.expired||[]).length)save()}
+/* a bait from another player: rebuild it from its recipe so names and prices can't be faked */
+function netBait(b){try{if(!b||!GROUPS.includes(b.g))return null;const base=BAIT_BASES[b.g].find(x=>x[0]===b.base);if(!base)return null;
+  const r=Math.max(0,Math.min(6,b.r|0)),sz=Math.max(0,Math.min(4,b.s|0));const q=(Array.isArray(b.q)?b.q:[]).filter(i=>Number.isInteger(i)&&i>=0&&i<QUALS.length).slice(0,6);
+  return newBait(finishBait({g:b.g,base:b.base,s:sz,q,r}))}catch(_){return null}}
+const baitRecipe=b=>({n:b.n,g:b.g,base:b.base,s:b.s,q:b.q.slice(),r:b.r});
+async function netMarket(force){if(!NET.id&&!NET.ok)return;if(!force&&NET.at.market>Date.now()-20e3)return;NET.at.market=Date.now();
+ try{NET.market=(await rpc('sg_market',{p_limit:60})).map(l=>({...l,price:+l.price,bait:netBait(l.bait)})).filter(l=>l.bait);if(NET.id)NET.mine=(await rpc('sg_my_market',me())).open||NET.mine;}catch(_){}
+ if(UI.screen==='lab')render()}
+async function netRecords(force){if(!force&&NET.at.rec>Date.now()-30e3)return;NET.at.rec=Date.now();
+ const map=rows=>(rows||[]).filter(r=>SPECIES[r.sid]).map(r=>({who:r.player_name,sid:r.sid,tier:r.tier,hp:r.hp,area:r.area,at:Date.parse(r.created_at),you:r.player===NET.id,live:true}));
+ try{NET.records=map(await rpc('sg_records',{p_hours:24,p_limit:25}));NET.recordsAll=map(await rpc('sg_records',{p_hours:null,p_limit:25}))}catch(_){}
+ if(UI.screen==='system'||UI.screen==='temple')render()}
+/* catches redeemed at the gate go up in one batch; queued if offline */
+function netQueueCatches(rows){S.netQ=(S.netQ||[]).concat(rows).slice(-24);save();netFlush()}
+async function netFlush(){if(!NET.id||!(S.netQ||[]).length||NET.flushing)return;NET.flushing=true;
+ try{const batch=S.netQ.slice(0,12);await rpc('sg_submit_catches',{...me(),p_rows:batch});S.netQ=S.netQ.slice(batch.length);save();NET.at.rec=0}catch(_){}finally{NET.flushing=false}}
+async function netBuy(lid){const l=(NET.market||[]).find(x=>x.id===lid);if(!l)return;
+ if(S.money<l.price){sfx.error();toast.bad('Not enough money for that listing.');return}
+ try{const r=await rpc('sg_buy_listing',{...me(),p_listing:lid});const nb=netBait(r.bait);if(!nb)throw new Error('That bait could not be read.');
+  S.money-=+r.price;nb.keep=true;S.baits.push(nb);sfx.coin();toast(`Bought ${esc(nb.n)} from ${esc(r.seller)} for ${money(+r.price)}.`);save()}
+ catch(e){sfx.error();toast.bad(esc(e.message))}
+ NET.market=(NET.market||[]).filter(x=>x.id!==lid);render();netMarket(true)}
+async function netList(){const uid=+($('#netsellbait')||{}).value,price=Math.round(+($('#netsellprice')||{}).value*100)/100;const b=S.baits.find(x=>x.uid===uid);
+ if(!b){toast.bad('Pick a bait to list.');return}if(!(price>=1&&price<=1e6)){toast.bad('Set a price between $1 and $1,000,000.');return}
+ if(b.dur<MAX_DUR[b.r]){toast.bad('Only unworn baits (full durability) can be listed.');return}
+ try{await rpc('sg_list_bait',{...me(),p_bait:baitRecipe(b),p_price:price});S.baits=S.baits.filter(x=>x!==b);S.bookmarks=S.bookmarks.filter(u=>u!==b.uid);sfx.coin();toast(`Listed ${esc(b.n)} for ${money(price)}. Other hunters can buy it now.`);save()}
+ catch(e){sfx.error();toast.bad(esc(e.message))}
+ netMarket(true);render()}
+async function netCancel(lid){try{const b=await rpc('sg_cancel_listing',{...me(),p_listing:lid});const nb=netBait(b);if(nb){S.baits.push(nb);toast(`${esc(nb.n)} is back in your locker.`);save()}}catch(e){toast.bad(esc(e.message))}netMarket(true);render()}
+function netStatus(){return NET.ok?`<span class="netdot on" aria-hidden="true"></span> Live · ${NET.online||1} hunter${NET.online===1?'':'s'} online`:NET.id?`<span class="netdot" aria-hidden="true"></span> Reconnecting…`:`<span class="netdot" aria-hidden="true"></span> Offline: showing the Temple's own traders`}
+function vNetMarket(){const L=(NET.market||[]).filter(l=>l.seller!==NET.id);const mine=NET.mine||[];const sellable=S.baits.filter(b=>b.dur>=MAX_DUR[b.r]);
+ return`<div class="box netbox"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">Hunters' market</h3><span class="netstat">${netStatus()}</span></div>
+ <p style="font-size:14px;margin:6px 0 10px">Baits listed by real hunters. Buy one and it's yours the moment you click; sellers are paid when they next play.</p>
+ ${NET.ok?`<div class="tbl-wrap"><table class="lav"><thead><tr><th>Hunter</th><th>Bait</th><th>Group</th><th>Size</th><th>Rarity</th><th>Qualities</th><th class="num">Price</th><th></th></tr></thead><tbody>
+  ${L.length?L.map(l=>{const d=l.bait;return`<tr><td>${esc(l.seller_name)}</td><td>${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td><span class="r-${d.r}">${RARITY[d.r]}</span></td><td style="font-size:12px">${qchips(d)}</td><td class="num">${money(l.price)}</td><td><button class="btn small" data-act="netbuy" data-lid="${l.id}" ${S.money<l.price?'disabled':''}>Buy</button></td></tr>`}).join(''):'<tr><td colspan="8">No hunter listings right now. Be the first: list a bait below.</td></tr>'}</tbody></table></div>
+ <h3 style="margin:16px 0 6px">Sell to other hunters</h3>
+ ${sellable.length?`<div class="trapbar" style="margin-top:0"><label for="netsellbait">Bait</label><select id="netsellbait" style="flex:1 1 220px;min-width:0">${sellable.map(b=>`<option value="${b.uid}">${esc(b.n)} · ${RARITY[b.r]} ${b.g} · shop value ${money(b.p)}</option>`).join('')}</select>
+  <label for="netsellprice">Price $</label><input id="netsellprice" type="number" min="1" max="1000000" step="1" value="${Math.max(1,Math.round(sellable[0].p*1.3))}" style="width:110px">
+  <button class="btn gold" data-act="netlist" ${mine.length>=8?'disabled':''}>List for sale</button></div><p class="muted" style="font-size:12px;margin:4px 0 0">Unworn baits only. Up to 8 listings at a time; unsold listings come back after 3 days.</p>`:'<p class="muted">You have no unworn baits to list.</p>'}
+ ${mine.length?`<div class="tbl-wrap" style="margin-top:10px"><table class="lav"><thead><tr><th>Your listing</th><th class="num">Price</th><th>Expires</th><th></th></tr></thead><tbody>${mine.map(l=>`<tr><td>${esc(l.bait&&l.bait.n||'Bait')}</td><td class="num">${money(+l.price)}</td><td>${fmtLeft(Date.parse(l.expires_at))}</td><td><button class="btn small" data-act="netcancel" data-lid="${l.id}">Take back</button></td></tr>`).join('')}</tbody></table></div>`:''}`
+ :`<p class="muted">Can't reach the hunters' market right now. The Temple traders below still work.</p><button class="btn small" data-act="netretry">Try again</button>`}</div>`}
+setInterval(()=>{if(S&&!document.hidden){if(!NET.id)netInit();else netBeat()}},60000);
+
 function rescueCheck(){if(!S||S.exp)return;const cheapest=Math.min(...(S.shop||[]).map(b=>b.p),99);if(S.baits.length===0&&S.money<cheapest&&S.rescueDay!==S.day){S.rescueDay=S.day;['Flesh','Plant','Mineral'].forEach(g=>S.baits.push(Object.assign(newBait(genBait(0,g)),{keep:true})));news('The Temple keeper pressed three starter baits into your hands. Pay it forward.');save()}}
 function newDay(first){
  if(!S.cache)newCache();if(!first)npcOpenCaches();
@@ -1107,12 +1191,12 @@ function leaveDimension(){const e=S.exp;
   else if(S.goldRush&&!S.goldRush.done&&m.sid===S.goldRush.sid&&m.tier>=S.goldRush.minTier){grHit=true;if(m.tier>=9&&grKeyOk())cacheHit=true}
   else if(S.goldRush&&!S.goldRush.done&&m.sid===S.goldRush.sid&&m.tier===8){grNear=true}
   if(S.week&&m.sid===S.week.target){S.week.mine.push(m.maxhp);weekBump()}
-  S.records.push({sid:m.sid,hp:m.maxhp,tier:m.tier,day:S.day,area:REGIONS[e.region].areas[m.area].n});
+  S.records.push({sid:m.sid,hp:m.maxhp,tier:m.tier,day:S.day,area:REGIONS[e.region].areas[m.area].n});(UI.netRows=UI.netRows||[]).push({sid:m.sid,tier:m.tier,hp:m.maxhp,area:REGIONS[e.region].areas[m.area].n,region:e.region});
   S.board.push({who:S.name,sid:m.sid,tier:m.tier,hp:m.maxhp,area:REGIONS[e.region].areas[m.area].n,at:Date.now(),you:true,day:S.day});
   rows.push({m,v,gene,bpg,rb:rb&&{n:rb.n,r:rb.r},key,quota:quota<1})});
  quotaSpend(e.tank);S.records.sort((a,b)=>b.hp-a.hp);S.records=S.records.slice(0,25);
  S.money+=total;S.bp+=bpGain;S.stats.earned+=total;;
- S.lastCash={id:Date.now(),rows,total,sets,guild:gl,rested:rest>1,bpGain,grHit,cacheHit,perfectKeys,perfectFirst,gr:grHit?{...S.goldRush}:null,mult,region:e.region};if(cacheHit){grKeyUse();S.lastCash.cacheFirst=!S.cacheUnlocked&&!perfectFirst;S.cacheUnlocked=true;S.cacheKeys=(S.cacheKeys||0)+1;news('Gold Rush with a Legendary or Perfect catch: you earned a cache key.')}
+ if(UI.netRows&&UI.netRows.length){netQueueCatches(UI.netRows);UI.netRows=[]}S.lastCash={id:Date.now(),rows,total,sets,guild:gl,rested:rest>1,bpGain,grHit,cacheHit,perfectKeys,perfectFirst,gr:grHit?{...S.goldRush}:null,mult,region:e.region};if(cacheHit){grKeyUse();S.lastCash.cacheFirst=!S.cacheUnlocked&&!perfectFirst;S.cacheUnlocked=true;S.cacheKeys=(S.cacheKeys||0)+1;news('Gold Rush with a Legendary or Perfect catch: you earned a cache key.')}
  S.exp=null;
  if(grHit){if(!S.grWinsD||S.grWinsD.day!==S.day)S.grWinsD={day:S.day,n:0};S.grWinsD.n++;S.money+=grP;S.lastCash.grPay=grP;S.bp+=1;S.lastCash.grClaimed='both';S.goldRush.done=true;const wm=rows.filter(r=>r.m.sid===S.goldRush.sid&&r.m.tier>=S.goldRush.minTier).sort((a,b)=>b.m.tier-a.m.tier)[0];grWin(S.name,wm?wm.m.tier:S.goldRush.minTier,true);news(`You won the Gold Rush and earned ${money(grP)} and 1 bonus point. A new quest is up.`);newGoldRush()}
  else if(grNear){const c=Math.round(grP*.2);S.money+=c;addMisfortune(2);S.lastCash.grNear=c;news(grWinsOk()?`An Epic of the Gold Rush target doesn't count, but the Temple paid ${money(c)} and +2 misfortune for the near miss.`:`You have already won the Gold Rush twice today, so this entry paid the consolation: ${money(c)} and +2 misfortune.`)}
@@ -1238,7 +1322,7 @@ function vIntro(){return`<div class="lore">
 
 function tabs(sec,list){return`<div class="tabs" role="tablist">${list.map(([k,l])=>`<button role="tab" class="${UI.tab[sec]===k?'on':''}" data-act="tab" data-sec="${sec}" data-k="${k}">${l}</button>`).join('')}</div>`}
 function boardTable(rows,limit=20){return`<div class="tbl-wrap"><table class="lav"><thead><tr><th>Caught by</th><th>Monster</th><th class="num">HP</th><th>Where</th><th class="num">When</th></tr></thead><tbody>
- ${rows.slice(0,limit).map(r=>`<tr class="${r.you?'you':''}"><td>${esc(r.who)}</td><td>${SPECIES[r.sid].name} ${tierHtml(r.tier)}</td><td class="num hp">${r.hp.toLocaleString()} HP</td><td>${esc(r.area)}</td><td class="num">${r.at?ago(r.at):r.ago?r.ago+'h ago':'today'}</td></tr>`).join('')}</tbody></table></div>`}
+ ${rows.slice(0,limit).map(r=>`<tr class="${r.you?'you':''}"><td>${r.live?'<span class="netdot on" title="Live hunter"></span>':''}${esc(r.who)}</td><td>${SPECIES[r.sid].name} ${tierHtml(r.tier)}</td><td class="num hp">${r.hp.toLocaleString()} HP</td><td>${esc(r.area)}</td><td class="num">${r.at?ago(r.at):r.ago?r.ago+'h ago':'today'}</td></tr>`).join('')}</tbody></table></div>`}
 
 function keeperLine(fresh){const L=S.lastCash;
  if(fresh)return'Welcome, hunter. Step through the gate, bait the dark, and come back <b>through the gate</b> before your body gives out. Only souls you carry out are paid.';
@@ -1326,10 +1410,10 @@ function vLab(){const t=UI.tab.lab;let body='';
   ${searchBox('shop')}<div class="tbl-wrap"><table class="lav" data-bs="shop"><thead><tr>${[['n','Bait',''],['g','Group',''],['s','Size',''],['q','Qualities',''],['p','Price','num']].map(([k,l,c])=>`<th class="${c}" aria-sort="${UI.shopSort&&UI.shopSort.k===k?(UI.shopSort.dir>0?'ascending':'descending'):'none'}"><button class="sorth" data-act="ssort" data-k="${k}">${l} ${UI.shopSort&&UI.shopSort.k===k?(UI.shopSort.dir>0?'▲':'▼'):'<span style="opacity:.4">↕</span>'}</button></th>`).join('')}<th></th></tr></thead><tbody>
   ${shopSorted().map(([d,i])=>`<tr><td>${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td style="font-size:12px">${qchips(d)}</td><td class="num">${money(d.p)}</td><td><button class="btn small" data-act="buy" data-i="${i}" ${S.money<d.p?'disabled':''}>Buy</button></td></tr>`).join('')}</tbody></table></div>
   <p class="muted" style="margin-top:10px;font-size:13px">Stock changes every day. Baits come in 8 groups (${GROUPS.join(', ')}) and carry sub-qualities like <i>Smoked</i>, <i>Grave</i> or <i>Humming</i>. Monsters have favourite qualities; a bait that hits one is far more tempting.</p>`}
- else if(t==='market'){body=`<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>P2P market</h2><p>Rarer baits listed by other hunters. Listings refresh every day at midnight.</p></div><button class="btn gold" data-act="mrefresh" ${S.money<refreshCost()?'disabled':''}>Refresh listings · ${money(refreshCost())}</button></div>
+ else if(t==='market'){netMarket();body=`${vNetMarket()}<div class="row" style="justify-content:space-between;align-items:flex-start;margin-top:20px"><div><h2>Temple traders</h2><p>Rarer baits from the Temple's own traders. Listings refresh every day at midnight.</p></div><button class="btn gold" data-act="mrefresh" ${S.money<refreshCost()?'disabled':''}>Refresh listings · ${money(refreshCost())}</button></div>
   ${searchBox('mkt')}<div class="tbl-wrap"><table class="lav" data-bt="mkt"><thead><tr><th>Seller</th><th>Bait</th><th>Group</th><th>Size</th><th>Rarity</th><th>Qualities</th><th class="num">Price</th><th></th></tr></thead><tbody>
   ${S.market.length?S.market.map(l=>{const d=l.bait;return`<tr><td>${esc(l.seller)}</td><td>${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td><span class="r-${d.r}">${RARITY[d.r]}</span></td><td style="font-size:12px">${qchips(d)}</td><td class="num">${money(l.price)}</td><td><button class="btn small" data-act="mbuy" data-lid="${l.lid}" ${S.money<l.price?'disabled':''}>Buy</button></td></tr>`}).join(''):'<tr><td colspan="7">Sold out for today.</td></tr>'}</tbody></table></div>
-  <h2 style="margin-top:20px">Sell to the market</h2><p>You can list a bait only if it has no wear (full durability). Buyers pay 60% of its shop value.</p>
+  <h2 style="margin-top:20px">Sell to the Temple</h2><p>The Temple buys unworn baits instantly at 60% of shop value.</p>
   ${(()=>{const low=S.baits.filter(sellableLow);const v=low.reduce((a,b)=>a+b.p*.6,0);return`<div class="trapbar" style="margin-bottom:10px">
    <label style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink)"><input type="checkbox" data-act="autosell" ${S.autoSell?'checked':''}> <b>Auto-sell Uncommon and below</b></label>
    <button class="btn small" data-act="sellall" ${low.length?'':'disabled'}>${UI.sellConfirm?'Click again to sell '+low.length+' baits':'Sell all Uncommon and below now'+(low.length?` · ${low.length} for ${money(v)}`:'')}</button>
@@ -1368,8 +1452,12 @@ function vSystem(){const t=UI.tab.system;let body='';
   ${all.map(sp=>{const b=S.bestiary[sp.id];const seen=b||S.seen[sp.id];const hay=(b?sp.name+' '+EL[sp.el].name+' '+SIZES[sp.size]:'')+' '+((S.found&&S.found[sp.id])||[]).map(k=>{const[r,a]=k.split('-');return REGIONS[r].areas[a].n+' '+REGIONS[r].name}).join(' ');return`<tr data-hay="${esc(hay.toLowerCase())}" data-known="${seen?1:0}"><td>${seen?`<canvas width="32" height="32" data-sprite="${sp.id}" style="width:32px;height:32px;image-rendering:pixelated;${b?'':'filter:brightness(0);opacity:.4'}"></canvas>`:''}</td><td>${b?`<b>${sp.name}</b><br><span style="font-size:12px">${sp.note}</span>`:seen?'<i>Unknown shape glimpsed</i>':'???'}</td><td>${b?EL[sp.el].name:'—'}</td><td>${b?SIZES[sp.size]:'—'}</td><td>${[likesText(sp.id),notesText(sp.id)].filter(Boolean).join('<br>')||'—'}</td><td class="num">${b?b.n:0}</td><td class="num">${b?`${b.best} HP`:'—'}</td><td>${seen?`<button class="btn small" data-act="binfo" data-sid="${sp.id}" aria-expanded="${UI.bestInfo===sp.id}">${UI.bestInfo===sp.id?'Close':'Info'}</button>`:''}</td></tr>${UI.bestInfo===sp.id?bestInfoRow(sp,b):''}`}).join('')}</tbody></table></div>`}`}
  else if(t==='mine'){body=`<h2>My records</h2><div class="grid3" style="margin-bottom:16px">${[['Souls captured',S.stats.caught],['Escaped',S.stats.lost],['Hunts',S.stats.trips],['Earned',money(S.stats.earned)]].map(([l,v])=>`<div class="box"><div class="eyebrow">${l}</div><div style="font-family:var(--f-display);font-size:24px">${v}</div></div>`).join('')}</div>
   <h3>Personal best catches</h3>${S.records.length?`<div class="tbl-wrap"><table class="lav"><thead><tr><th>#</th><th>Monster</th><th class="num">HP</th><th>Where</th><th class="num">Day</th></tr></thead><tbody>${S.records.map((r,i)=>`<tr><td>${i+1}</td><td>${SPECIES[r.sid].name} ${tierHtml(r.tier)}</td><td class="num hp">${r.hp.toLocaleString()} HP</td><td>${esc(r.area)}</td><td class="num">${r.day}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Cash in a monster to start your records.</p>'}`}
- else if(t==='global'){const g=S.board.filter(r=>!r.you).concat(S.records.map(r=>({who:S.name,sid:r.sid,tier:r.tier,hp:r.hp,area:r.area,ago:0,you:true}))).sort((a,b)=>b.hp-a.hp);
-  body=`<h2>Global records</h2>${boardTable(g,25)}`}
+ else if(t==='global'){netRecords();const g=S.board.filter(r=>!r.you).concat(S.records.map(r=>({who:S.name,sid:r.sid,tier:r.tier,hp:r.hp,area:r.area,ago:0,you:true}))).sort((a,b)=>b.hp-a.hp);
+  const all=UI.recAll;const live=all?NET.recordsAll:NET.records;
+  body=`<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Hunters worldwide</h2><span class="netstat">${netStatus()}</span></div>
+  <div class="row" style="gap:6px;margin:8px 0"><button class="btn small ${all?'':'primary'}" data-act="recwin" data-all="">Last 24 hours</button><button class="btn small ${all?'primary':''}" data-act="recwin" data-all="1">All time</button></div>
+  ${live&&live.length?boardTable(live,25):`<p class="muted">${NET.ok?'No catches redeemed yet. Bring souls back through a gate to post the first record.':'Live records are unavailable right now.'}</p>`}
+  <h2 style="margin-top:22px">Temple archive</h2><p class="muted" style="margin-top:0;font-size:13px">The Temple's own record book, kept on this device.</p>${boardTable(g,25)}`}
  else{body=`<h2>Game</h2><div class="grid2"><div class="box"><h3>About this prototype</h3><p style="font-size:14px">A remake of the mechanics of <i>Monster Hunter X</i> (Red Shade Games, 2009), a browser game rebuilt from its archived 1.0 manual. Everything here is original: names, areas, art and numbers. Features are trapping with bait from 8 groups and 210 sub-qualities, 500 creatures across 48 regions, the pull, push and release fight with a danger meter, 4-hour dimension trips through gates, the 5-slot Soul Tank, elemental equipment, region unlocks, bait bookmarking, the P2P market, gene synthesis, Gold Rush quests, weekly tournaments and the top catches board.</p>
   <p class="muted" style="font-size:14px">Not in yet: Nation Wars, the forum, real multiplayer. Other hunters are simulated.</p><p class="muted" style="font-size:13px">Headings use <b>Pixelbasel</b> © 2025 GGBotNet, under the SIL Open Font License 1.1.</p></div>
   <div class="box"><h3>Save data</h3><p style="font-size:14px">Progress saves in this browser automatically.</p><label for="vol" style="display:block;margin:6px 0">Volume</label><input type="range" id="vol" min="0" max="1" step=".05" value="${S.vol==null?.8:S.vol}" style="width:100%"><label for="musicvol" style="display:block;margin:10px 0 6px">Music</label><input type="range" id="musicvol" min="0" max="1" step=".05" value="${musicVol()}" style="width:100%"><p class="muted" style="font-size:12px;margin:6px 0 0">Music: "Minstrel Dance" and "The Old Tower Inn" by RandomMind, "Abandoned Passages" by congusbongus, "Horror Loop" by TinyWorlds (all CC0, via OpenGameArt).</p><label style="display:block;margin-top:12px;font-size:14px;text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink)"><input type="checkbox" data-act="autochaff" ${S.autoChaff?'checked':''}> <b>Quick-fight small fry</b>: Weakling and Standard catches of species you have caught 10+ times are fought for you instantly, reading the stance.</label><div class="row" style="margin-top:10px"><button class="btn danger" data-act="reset1">Start over</button></div><div id="resetconfirm"></div></div></div>`}
@@ -1599,7 +1687,7 @@ function go(to){if(S.exp&&!['hunt','watch','fight','caught','auto'].includes(to)
  UI.screen=to;UI.msg=null;render();window.scrollTo(0,0)}
 function act(a,d,el){
  switch(a){
- case'newgame':{const n=($('#hname').value||'').trim().slice(0,18)||'Hunter';newGame(n);UI.screen='temple';render();break}
+ case'newgame':{const n=($('#hname').value||'').trim().slice(0,18)||'Hunter';newGame(n);UI.screen='temple';render();setTimeout(netInit,300);break}
  case'go':go(d.to);break;
  case'tab':UI.tab[d.sec]=d.k;UI.cacheMsg=null;render();break;
  case'mute':S.mute=!S.mute;if(S.mute)ambience(false);save();renderTop();break;
@@ -1643,6 +1731,11 @@ function act(a,d,el){
  case'begin':startExpedition(UI.enterRegion);break;
  case'move':UI.msg=null;moveTo(+d.ai);break;
  case'trap':UI.msg=null;startTrap();break;
+ case'netbuy':netBuy(+d.lid);break;
+ case'netlist':netList();break;
+ case'netcancel':netCancel(+d.lid);break;
+ case'netretry':NET.at={};if(!NET.id)netInit();else netBeat();netMarket(true);break;
+ case'recwin':UI.recAll=!!d.all;render();break;
  case'lt_cancel':UI.lowTimeAsk=null;render();break;
  case'lt_trap':{const a=UI.lowTimeAsk;UI.lowTimeAsk=null;if(a)startTrap(a);break}
  case'lt_gate':{UI.lowTimeAsk=null;const e=S.exp;if(!e)break;if(e.area)moveTo(0);else if(e.tank.length>TANK_MAX){UI.msg={t:`Release ${e.tank.length-TANK_MAX} soul${e.tank.length-TANK_MAX>1?'s':''} first (or press K): the gate only redeems ${TANK_MAX}. Then press Leave Dimension.`,c:'bad'};render()}else leaveDimension();break}
@@ -1707,7 +1800,7 @@ function boot2(data){
  else if(S.exp){ // resume in the field
   if(S.exp.fight)UI.screen='fight';else if(S.exp.alert)UI.screen='watch';else{if(S.exp.trap&&!S.exp.alert){S.exp.trap=null}UI.screen='hunt'}}
  else if(UI.screen==='intro'||!UI.screen)UI.screen='temple';
- render();}
+ render();setTimeout(netInit,600);}
 setInterval(()=>{if(!S)return;const cd=fmtCountdown(untilMidnight());const c=document.getElementById('clock');if(c)c.textContent=cd;document.querySelectorAll('[data-cd]').forEach(e=>e.textContent=cd);
  const beat=npcGoldRush();if(beat){toast(`${esc(beat)} won the Gold Rush. New quest: ${SPECIES[S.goldRush.sid].name}.`);if(UI.screen==='temple')render()}
  if(catchUpDays()){toast('A new day has begun: new market listings and Gene Key.');if(['watch','fight'].includes(UI.screen))renderTop();else render()}},1000);
