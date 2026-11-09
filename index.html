@@ -551,7 +551,7 @@ function makeSprite(sid){
    ctx.fillStyle='#0b0d12';ctx.fillRect(ex+1,y+2,1,1);ctx.fillRect(N-ex,y+2,1,1);break}}
  spriteCache[sid]=c;return c;}
 const ATLAS={img:null,map:null,cell:128};
-try{fetch('sprites/atlas.json').then(r=>r.ok?r.json():null).then(j=>{if(!j)return;const im=new Image();im.onload=()=>{ATLAS.img=im;ATLAS.map=j.map;ATLAS.cell=j.cell;if(S&&UI.screen!=='intro')render()};im.src='sprites/atlas.png'}).catch(()=>{})}catch(e){}
+try{fetch('sprites/atlas.json').then(r=>r.ok?r.json():null).then(j=>{if(!j)return;const im=new Image();im.onload=()=>{ATLAS.img=im;ATLAS.map=j.map;ATLAS.cell=j.cell;if(S&&UI.screen!=='intro')render()};im.onerror=()=>{if(!im.dataset.png){im.dataset.png=1;im.src='sprites/atlas.png'}};im.src='sprites/atlas.webp'}).catch(()=>{})}catch(e){}
 function drawShape(ctx,sid,cx,by,size){if(hasArt(sid)){const[sx,sy]=ATLAS.map[sid],C=ATLAS.cell;ctx.imageSmoothingEnabled=true;ctx.drawImage(ATLAS.img,sx,sy,C,C,cx-size/2,by-size,size,size)}else{const s=makeSprite(sid);ctx.imageSmoothingEnabled=false;ctx.drawImage(s,cx-size/2,by-size,size,size)}}
 function hasArt(sid){return !!(ATLAS.img&&ATLAS.map&&ATLAS.map[sid])}
 function atlasMip(lv){lv=lv||1;atlasMip.c=atlasMip.c||{};if(atlasMip.c[lv])return atlasMip.c[lv];const f=lv===2?4:2;const im=ATLAS.img;const c=document.createElement('canvas');c.width=Math.ceil(im.width/f);c.height=Math.ceil(im.height/f);const x=c.getContext('2d');x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';x.drawImage(im,0,0,c.width,c.height);return atlasMip.c[lv]=c}
