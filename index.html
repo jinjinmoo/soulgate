@@ -419,6 +419,7 @@ button.cache:not(:disabled):hover .chest{transform:translateY(-2px)}
 #netfoot .flag{width:16px;height:12px;border-radius:2px;object-fit:cover;font-size:9px;line-height:12px;text-align:center;background:rgba(255,255,255,.08)}
 .bico{display:inline-block;width:24px;height:24px;vertical-align:-7px;margin-right:6px;background-image:url(ui/baits.png);background-size:576px 528px;background-repeat:no-repeat;image-rendering:pixelated;flex:none}
 #trapico .bico{width:32px;height:32px;background-size:768px 704px;vertical-align:middle}
+.btn.gsign{display:inline-flex;align-items:center;gap:10px;background:#fff!important;background-image:none!important;border-image:none!important;border:1px solid #dadce0!important;border-radius:4px;color:#1f1f1f!important;box-shadow:0 2px 0 rgba(0,0,0,.35);font-weight:600;padding:9px 16px}.btn.gsign::before,.btn.gsign::after{display:none!important}.btn.gsign:hover{background:#f3f6fb!important}.gsign .g{font:700 17px/1 Arial,sans-serif;color:#4285f4}
 .namebox{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.namebox input{flex:1 1 160px;min-width:0}
 </style>
 
@@ -820,7 +821,7 @@ async function netBeat(first){if(!S||!NET.id)return;
  try{if(S.wantName){const w=S.wantName;delete S.wantName;try{const nm=await rpc('sg_rename',{...me(),p_name:w});if(typeof nm==='string'&&nm)S.name=nm}catch(e){if(!/offline/.test(NET.err))NET.nameNote=e.message;else S.wantName=w}}
   const sn=await rpc('sg_heartbeat',{...me(),p_name:S.name,p_stats:netStats()});if(typeof sn==='string'&&sn&&sn!==S.name&&!S.wantName){S.name=sn;save();renderTop()}if(NET.nameNote){toast(`Your hunter name is ${esc(S.name)}. ${esc(NET.nameNote)} You can change it in System › Game.`);NET.nameNote=''}
   try{const ol=await rpc('sg_online_list',{p_limit:40});NET.online=ol.n||0;NET.who=ol.list||[]}catch(_){NET.online=await rpc('sg_online',{})}netFoot();
-  await netFlush();await netCollect(first);await netRush();if(S.grClaim)await netClaimRush();if(UI.screen==='temple'){if(UI.tab.temple==='caches')netCaches(true);if(UI.tab.temple==='guild')netGuild()}}catch(_){}
+  await netFlush();if(AUTH.tok){if(AUTH.linked)authPush().catch(()=>{});else if(AUTH.peek===null||AUTH.peek===undefined)authSync()}await netCollect(first);await netRush();if(S.grClaim)await netClaimRush();if(UI.screen==='temple'){if(UI.tab.temple==='caches')netCaches(true);if(UI.tab.temple==='guild')netGuild()}}catch(_){}
  if(['lab','system','temple'].includes(UI.screen)&&!document.querySelector('#main input:focus,#main select:focus'))render()}
 /* the seller side: money for sold baits, expired baits back */
 async function netCollect(quiet){if(!NET.id)return;const r=await rpc('sg_my_market',me());NET.mine=r.open||[];
@@ -907,6 +908,59 @@ function vNetLedger(){const L=NET.ledger;if(!NET.ok)return'';
 function vNetRoster(){const R=NET.roster;if(!NET.ok||!R||!R.length)return'';const mine=S.league?S.league.rank:0;const at=R.find(x=>x.rank===mine);
  return`<p style="font-size:13px;margin:8px 0 0"><span class="netdot on"></span><b>Guild roster:</b> ${RANKS.map((r,i)=>{const x=R.find(y=>y.rank===i);return x?`${r} ${x.n}`:null}).filter(Boolean).reverse().join(' · ')}${at?`<br><span class="muted">At ${RANKS[mine]}:</span> ${at.names.map(esc).join(', ')}`:''}</p>`}
 
+/* ---------- Google sign-in (Supabase Auth) keeps one hunter per Google account ----------
+   The game still plays without an account. Signing in copies this device's hunter (save + server key)
+   to the account, and loads it again on any other device. */
+const AUTH_KEY='soulgate.auth.v1';
+const AUTH={tok:null,google:null,peek:undefined,linked:false,lastPush:'',lastAt:0,busy:false,choice:null,err:''};
+const inFrame=(()=>{try{return window.top!==window.self}catch(_){return true}})();
+function authLoad(){try{const o=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(o&&o.access_token)AUTH.tok=o}catch(_){}}
+function authStore(){try{AUTH.tok?localStorage.setItem(AUTH_KEY,JSON.stringify(AUTH.tok)):localStorage.removeItem(AUTH_KEY)}catch(_){}}
+function authFromHash(){const h=location.hash||'';if(!/access_token=|error_description=/.test(h))return;const q=new URLSearchParams(h.slice(1));
+ try{history.replaceState(null,'',location.pathname+location.search)}catch(_){location.hash=''}
+ if(q.get('error_description')){AUTH.err=q.get('error_description');return}
+ AUTH.tok={access_token:q.get('access_token'),refresh_token:q.get('refresh_token'),expires_at:Date.now()+(+q.get('expires_in')||3600)*1000};AUTH.fresh=true;authStore()}
+async function authFetch(path,opt){const r=await fetch(NET.url+path,Object.assign({},opt,{headers:Object.assign({apikey:NET.key,'Content-Type':'application/json'},(opt&&opt.headers)||{})}));const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(_){}if(!r.ok)throw new Error((j&&(j.msg||j.error_description||j.message))||('Sign-in error '+r.status));return j}
+async function authToken(){const t=AUTH.tok;if(!t)return null;if(t.expires_at-Date.now()>90e3)return t.access_token;
+ try{const j=await authFetch('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:t.refresh_token})});
+  AUTH.tok={access_token:j.access_token,refresh_token:j.refresh_token,expires_at:Date.now()+(j.expires_in||3600)*1000,email:t.email};authStore();return j.access_token}
+ catch(e){if(/invalid|not found|revoked|expired/i.test(e.message)){AUTH.tok=null;AUTH.linked=false;authStore()}return null}}
+async function arpc(fn,args){const tk=await authToken();if(!tk)throw new Error('Sign in first.');const c=new AbortController();const tm=setTimeout(()=>c.abort(),12000);
+ try{const r=await fetch(`${NET.url}/rest/v1/rpc/${fn}`,{method:'POST',headers:{apikey:NET.key,Authorization:'Bearer '+tk,'Content-Type':'application/json'},body:JSON.stringify(args||{}),signal:c.signal});
+  const tx=await r.text();let j=null;try{j=tx?JSON.parse(tx):null}catch(_){j=tx}if(!r.ok)throw new Error((j&&(j.message||j.hint))||('Server error '+r.status));return j}finally{clearTimeout(tm)}}
+async function authSettings(){if(AUTH.google!==null)return;try{const j=await authFetch('/auth/v1/settings',{method:'GET'});AUTH.google=!!(j&&j.external&&j.external.google)}catch(_){AUTH.google=null}}
+function authSignIn(){if(inFrame){toast('Open the game at soulgate-zeta.vercel.app to sign in with Google.');return}save();
+ location.href=`${NET.url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(location.origin+location.pathname)}`}
+async function authSignOut(){const tk=AUTH.tok&&AUTH.tok.access_token;await authPush(true).catch(()=>{});AUTH.tok=null;AUTH.linked=false;AUTH.peek=undefined;authStore();
+ if(tk)fetch(NET.url+'/auth/v1/logout',{method:'POST',headers:{apikey:NET.key,Authorization:'Bearer '+tk}}).catch(()=>{});toast('Signed out. Your hunter stays on this device.');render()}
+function cloudSave(){const o=JSON.parse(JSON.stringify(S));delete o.tab;delete o.wantName;return o}
+/* after sign-in, or on start-up while signed in: work out which hunter belongs to the account */
+async function authSync(){if(!AUTH.tok||AUTH.busy)return;AUTH.busy=true;
+ try{if(!AUTH.tok.email){try{const u=await authFetch('/auth/v1/user',{method:'GET',headers:{Authorization:'Bearer '+await authToken()}});AUTH.tok.email=u&&u.email;authStore()}catch(_){}}
+  const pk=await arpc('sg_cloud_peek',{});AUTH.peek=pk;
+  if(!pk){if(S&&NET.id){await arpc('sg_cloud_link',{...me(),p_save:cloudSave(),p_replace:false});AUTH.linked=true;AUTH.lastAt=Date.now();toast(`Your hunter ${esc(S.name)} is now saved to your Google account.`)}}
+  else if(NET.id&&pk.player===NET.id){AUTH.linked=true;if(AUTH.fresh)toast('Signed in. Your progress is saved to your Google account.');await authPush(true)}
+  else if(!S){await authLoadCloud();return}
+  else{AUTH.choice=pk;UI.screen==='fight'||render()}
+  AUTH.fresh=false}
+ catch(e){AUTH.err=e.message}
+ finally{AUTH.busy=false;if(['system','intro'].includes(UI.screen))render()}}
+async function authPush(force){if(!AUTH.tok||!AUTH.linked||!S||!NET.id||readOnly)return;if(!force&&Date.now()-AUTH.lastAt<120e3)return;
+ const o=cloudSave();const str=JSON.stringify(o);if(str===AUTH.lastPush)return;await arpc('sg_cloud_save',{...me(),p_save:o});AUTH.lastPush=str;AUTH.lastAt=Date.now()}
+async function authLoadCloud(){const c=await arpc('sg_cloud_load',{});if(!c||!c.save){toast('No saved hunter on this account yet.');return}
+ try{localStorage.setItem(SAVE_KEY,JSON.stringify(c.save));localStorage.setItem(NET_ID_KEY,JSON.stringify({id:c.player,secret:c.secret}))}catch(_){toast('Could not store the hunter in this browser.');return}location.reload()}
+function authBox(){const sig=!!AUTH.tok;
+ if(sig)return`<p style="font-size:14px;margin:0 0 6px">${AUTH.linked?'<span class="netdot on" aria-hidden="true"></span> ':''}Signed in with Google${AUTH.tok.email?` as <b>${esc(AUTH.tok.email)}</b>`:''}.</p>
+  <p class="muted" style="font-size:12px;margin:0 0 8px">${AUTH.linked?`Progress saves to your account every couple of minutes${AUTH.lastAt?` (last saved ${ago(AUTH.lastAt)})`:''}. Sign in on any device to continue.`:AUTH.busy?'Checking your account…':AUTH.err?esc(AUTH.err):'Not linked yet.'}</p>
+  <div class="row" style="gap:8px">${AUTH.linked?'<button class="btn" data-act="authsave">Save now</button>':''}<button class="btn" data-act="authout">Sign out</button></div>`;
+ if(AUTH.google===false)return`<p class="muted" style="font-size:13px;margin:0">Google sign-in is coming soon. Until then, use a backup to move your hunter.</p>`;
+ return`<p style="font-size:14px;margin:0 0 8px">Sign in with Google to keep your hunter safe and play it on any device.</p>${inFrame?`<p class="muted" style="font-size:12px;margin:0">Google sign-in works in the full game at <b>soulgate-zeta.vercel.app</b>.</p>`:`<button class="btn gsign" data-act="authin"><span class="g" aria-hidden="true">G</span> Sign in with Google</button>`}${AUTH.err?`<p class="msg bad" style="margin:8px 0 0;font-size:12px">${esc(AUTH.err)}</p>`:''}`}
+function authChoiceModal(){const c=AUTH.choice;if(!c)return'';return`<div class="modalback"></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="authq">
+ <h2 id="authq" style="margin-top:0">Which hunter do you want?</h2>
+ <p>Your Google account already has <b>${esc(c.name||'a hunter')}</b>${c.day?` (day ${+c.day})`:''}, last saved ${c.updated_at?ago(new Date(c.updated_at).getTime()):'earlier'}.</p>
+ <p>This device is playing <b>${esc(S.name)}</b> (day ${S.day}).</p>
+ <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn primary" data-act="authpick" data-k="cloud">Play ${esc(c.name||'the account hunter')}</button><button class="btn" data-act="authpick" data-k="here">Keep ${esc(S.name)}</button><button class="btn" data-act="authpick" data-k="out">Sign out</button></div>
+ <p class="muted" style="font-size:12px;margin:10px 0 0">Keeping ${esc(S.name)} replaces the hunter saved on your account. Playing ${esc(c.name||'it')} replaces the progress in this browser. Make a backup first if you want to keep both.</p></div>`}
 function flagOf(cc){cc=String(cc||'').toLowerCase();return /^[a-z]{2}$/.test(cc)&&cc!=='xx'&&cc!=='t1'?`<img class="flag" src="https://flagcdn.com/32x24/${cc}.png" alt="${cc.toUpperCase()}" title="${cc.toUpperCase()}" loading="lazy">`:'<span class="flag" title="Unknown country">?</span>'}
 function netFoot(){const f=$('#netfoot');if(!f)return;if(!S||!NET.ok){f.innerHTML='';return}const L=NET.who||[];
  f.innerHTML=`<span><span class="netdot on" aria-hidden="true"></span> ${NET.online||L.length} hunter${(NET.online||L.length)===1?'':'s'} online</span>`+L.map(p=>`<span class="who${p.name===S.name?' you':''}">${flagOf(p.country)}${esc(p.name)}</span>`).join('')+((NET.online||0)>L.length?`<span>+${NET.online-L.length} more</span>`:'')}
@@ -1386,7 +1440,7 @@ const fmtClock=m=>`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
 /* ================= RENDER ================= */
 function render(){if(UI.quick)return;rescueCheck();renderTop();netFoot();const scr=UI.screen;const m=$('#main');
  const map={auto:vAuto,intro:vIntro,temple:vTemple,equip:vEquip,lab:vLab,system:vSystem,map:vMap,rules:vRules,hunt:vHunt,watch:vWatch,fight:vFight,caught:vCaught,cashin:vCashin};
- document.body.dataset.scr=scr;m.innerHTML=(map[scr]||vTemple)();if(UI.lastScr!==scr){m.classList.remove('enter');void m.offsetWidth;m.classList.add('enter');UI.lastScr=scr}after(scr);}
+ document.body.dataset.scr=scr;m.innerHTML=(map[scr]||vTemple)()+(S&&!['fight','watch'].includes(scr)?authChoiceModal():'');if(UI.lastScr!==scr){m.classList.remove('enter');void m.offsetWidth;m.classList.add('enter');UI.lastScr=scr}after(scr);}
 function renderTop(){
  if(!S){$('#top').innerHTML=`<div class="logo"><img class="logoimg" src="ui/logo.png" alt="Soulgate"><small>PROJECT X · SOUL HUNTER</small></div>`;$('#nav').innerHTML='';return}
  $('#top').innerHTML=`<div class="logo"><img class="logoimg" src="ui/logo.png" alt="Soulgate"><small>PROJECT X · SOUL HUNTER</small></div>
@@ -1404,6 +1458,7 @@ function vIntro(){return`<div class="lore">
  <p>You are one of those hunters.</p>
  <div class="box" style="margin-top:18px"><label class="eyebrow" for="hname">Your hunter name</label>
  <div class="row" style="margin-top:8px"><input type="text" id="hname" maxlength="18" value="Hunter${randi(100,999)}" autocomplete="off"><button class="btn primary" data-act="newgame">Enter the Temple <kbd>Enter</kbd></button></div></div>
+ ${!inFrame&&AUTH.google?`<div class="box" style="margin-top:12px"><p style="margin:0 0 8px">Already a hunter? Sign in to carry on where you left off.</p>${AUTH.tok?`<p class="muted" style="margin:0">${AUTH.busy?'Loading your hunter…':esc(AUTH.err||'Signed in. This Google account has no hunter yet: start one above and it will be saved to your account.')}</p>`:`<button class="btn gsign" data-act="authin"><span class="g" aria-hidden="true">G</span> Sign in with Google</button>`}</div>`:''}
  <p class="keyhelp" style="margin-top:14px">Desktop prototype. Mouse or keyboard: <kbd>1</kbd>–<kbd>5</kbd> switch sections, <kbd>Space</kbd> pull, <kbd>S</kbd> push, <kbd>R</kbd> release, <kbd>T</kbd> trap.</p></div>`}
 
 function tabs(sec,list){return`<div class="tabs" role="tablist">${list.map(([k,l])=>`<button role="tab" class="${UI.tab[sec]===k?'on':''}" data-act="tab" data-sec="${sec}" data-k="${k}">${l}</button>`).join('')}</div>`}
@@ -1549,7 +1604,7 @@ function vSystem(){const t=UI.tab.system;let body='';
   <p class="muted" style="font-size:14px">Not in yet: Nation Wars and the forum.</p>
   <h3 style="margin-top:14px">Privacy</h3><p style="font-size:13px">Other hunters can see your hunter name, your country, your catches and your market listings. Your country is worked out from your connection when you play; your IP address is not stored. Nothing else about you is collected: no email, no account, no tracking.</p>
   <h3 style="margin-top:14px">Credits</h3><p class="muted" style="font-size:13px">Headings use <b>Pixelbasel</b> © 2025 GGBotNet, under the SIL Open Font License 1.1. Sound effects by Kenney and artisticDude (CC0). Music: "Minstrel Dance" and "The Old Tower Inn" by RandomMind, "Abandoned Passages" by congusbongus, "Horror Loop" by TinyWorlds (all CC0, via OpenGameArt). Creature, region, bait, chest and icon art made for Soulgate. Flags from flagcdn.com.</p></div>
-  <div class="box"><h3>Your hunter</h3><label for="rename" style="display:block;font-size:14px;text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink)">Hunter name, seen by other hunters</label><div class="namebox"><input type="text" id="rename" maxlength="18" value="${esc(S.name)}" autocomplete="off"><button class="btn primary" data-act="rename">Change name</button></div><p class="muted" style="font-size:12px;margin:6px 0 0">2–18 letters, numbers or spaces. Names are unique; you can change yours every 10 minutes.</p>
+  <div class="box"><h3>Your hunter</h3><div class="authbox" style="margin-bottom:14px">${authBox()}</div><label for="rename" style="display:block;font-size:14px;text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink)">Hunter name, seen by other hunters</label><div class="namebox"><input type="text" id="rename" maxlength="18" value="${esc(S.name)}" autocomplete="off"><button class="btn primary" data-act="rename">Change name</button></div><p class="muted" style="font-size:12px;margin:6px 0 0">2–18 letters, numbers or spaces. Names are unique; you can change yours every 10 minutes.</p>
   <h3 style="margin-top:16px">Save data</h3><p style="font-size:14px">Progress saves in this browser automatically. Make a backup to move your hunter to another device or browser.</p><div class="row" style="gap:8px;margin-bottom:6px"><button class="btn" data-act="backup">Download backup</button><label class="btn" for="restorefile" style="cursor:pointer">Restore from backup</label><input type="file" id="restorefile" accept=".json,application/json" hidden></div><div id="restoreconfirm"></div><p class="muted" style="font-size:12px;margin:0 0 10px">Keep the backup private: it holds the key to your hunter on the server.</p><label for="vol" style="display:block;margin:6px 0">Volume</label><input type="range" id="vol" min="0" max="1" step=".05" value="${S.vol==null?.8:S.vol}" style="width:100%"><label for="musicvol" style="display:block;margin:10px 0 6px">Music</label><input type="range" id="musicvol" min="0" max="1" step=".05" value="${musicVol()}" style="width:100%"><p class="muted" style="font-size:12px;margin:6px 0 0">Music: "Minstrel Dance" and "The Old Tower Inn" by RandomMind, "Abandoned Passages" by congusbongus, "Horror Loop" by TinyWorlds (all CC0, via OpenGameArt).</p><label style="display:block;margin-top:12px;font-size:14px;text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink)"><input type="checkbox" data-act="autochaff" ${S.autoChaff?'checked':''}> <b>Quick-fight small fry</b>: Weakling and Standard catches of species you have caught 10+ times are fought for you instantly, reading the stance.</label><div class="row" style="margin-top:10px"><button class="btn danger" data-act="reset1">Start over</button></div><div id="resetconfirm"></div></div></div>`}
  return`<h1 style="margin-bottom:12px">System</h1>`+tabs('system',[['bestiary','Bestiary'],['mine','My Records'],['global','Global Records'],['game','Game']])+body}
 
@@ -1777,7 +1832,7 @@ function go(to){if(S.exp&&!['hunt','watch','fight','caught','auto'].includes(to)
  UI.screen=to;UI.msg=null;render();window.scrollTo(0,0)}
 function act(a,d,el){
  switch(a){
- case'newgame':{const n=($('#hname').value||'').trim().slice(0,18)||'Hunter';newGame(n);S.wantName=n;UI.screen='temple';render();setTimeout(netInit,300);break}
+ case'newgame':{const n=($('#hname').value||'').trim().slice(0,18)||'Hunter';newGame(n);S.wantName=n;UI.screen='temple';render();setTimeout(async()=>{await netInit();if(AUTH.tok&&!AUTH.peek)authSync()},300);break}
  case'go':go(d.to);break;
  case'tab':UI.tab[d.sec]=d.k;UI.cacheMsg=null;render();break;
  case'mute':S.mute=!S.mute;if(S.mute)ambience(false);save();renderTop();break;
@@ -1842,6 +1897,10 @@ function act(a,d,el){
  case'relcaught':{const m=UI.caught.m;S.exp.tank=S.exp.tank.filter(x=>x!==m);logx(`Released ${an(SPECIES[m.sid].name)} ${TIERS[m.tier]}.`);UI.screen='hunt';UI.msg={t:`You released the ${SPECIES[m.sid].name}. Your Soul Tank has ${S.exp.tank.length}/${TANK_MAX}.`,c:''};save();render();break}
  case'leave':leaveDimension();break;
  case'gr':claimGoldRush(d.k);break;
+ case'authin':authSignIn();break;
+ case'authout':authSignOut();break;
+ case'authsave':authPush(true).then(()=>{toast('Saved to your Google account.');render()},e=>toast(esc(e.message)));break;
+ case'authpick':{const k=d.k;const c=AUTH.choice;AUTH.choice=null;if(k==='cloud')authLoadCloud().catch(e=>toast(esc(e.message)));else if(k==='here')arpc('sg_cloud_link',{...me(),p_save:cloudSave(),p_replace:true}).then(()=>{AUTH.linked=true;AUTH.lastAt=Date.now();AUTH.peek={player:NET.id};toast(`${esc(S.name)} is now the hunter on your Google account.`);render()},e=>toast(esc(e.message)));else{authSignOut()}render();break}
  case'rename':{const v=$('#rename');netRename(v?v.value:'');break}
  case'backup':{const data=JSON.stringify({soulgate:1,at:new Date().toISOString(),save:S,net:NET.id?{id:NET.id,secret:NET.secret}:null});const fname=`soulgate-${(S.name||'hunter').replace(/[^a-z0-9]+/gi,'-')}-day${S.day}.json`;
   if(window.claude&&claude.use){claude.use('downloads').then(dl=>{if(!dl){toast('Backups can be downloaded from the full game at soulgate-zeta.vercel.app.');return}return dl.save({filename:fname,data:new Blob([data],{type:'application/json'})}).then(()=>toast('Backup saved.'),e=>{if(e&&e.code!=='declined')toast('Could not save the backup here.')})});break}
@@ -1853,6 +1912,7 @@ function act(a,d,el){
  }}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;if(b.type==='checkbox'){return}ac();act(b.dataset.act,b.dataset,b)});
 document.addEventListener('input',e=>{if(e.target.id==='vol'){S.vol=+e.target.value;if(MASTER)MASTER.gain.value=S.vol;save()}if(e.target.id==='musicvol'){S.musicVol=+e.target.value;ac();save()}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)authPush(true).catch(()=>{})});
 document.addEventListener('change',e=>{const t=e.target;if(t.id==='restorefile'&&t.files&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const o=JSON.parse(fr.result);if(!o||o.soulgate!==1||!o.save||typeof o.save.name!=='string'||!Array.isArray(o.save.baits))throw new Error('bad');
    UI.restore=o;const rc=$('#restoreconfirm');if(rc)rc.innerHTML=`<p class="msg bad" style="margin:8px 0">Replace this hunter with <b>${esc(o.save.name)}</b> (day ${+o.save.day||'?'})? Progress in this browser will be overwritten.</p><div class="row"><button class="btn danger" data-act="restore2">Replace with backup</button><button class="btn" data-act="restore0">Cancel</button></div>`}catch(_){toast('That file is not a Soulgate backup.')}};fr.readAsText(t.files[0]);t.value=''}if(t.id==='vol')sfx.coin();if(t.id==='trapbait'){UI.lastBait=+t.value;const ti=$('#trapico');if(ti)ti.innerHTML=bIco(S.baits.find(b=>b.uid===+t.value))}if(t.id==='trapmin')UI.lastMins=+t.value;
  if(['autotarget','autotier','autopush','autorelease'].includes(t.id)){const pr=UI.autoPrefs||(UI.autoPrefs={sid:'any',minTier:5,release:false,pushAt:1});pr.sid=$('#autotarget')?$('#autotarget').value:pr.sid;pr.minTier=$('#autotier')?+$('#autotier').value:pr.minTier;pr.pushAt=$('#autopush')?+$('#autopush').value:pr.pushAt;pr.release=$('#autorelease')?$('#autorelease').checked:pr.release}
@@ -1878,6 +1938,7 @@ document.addEventListener('keydown',e=>{
 /* ================= BOOT ================= */
 function boot(data){try{boot2(data)}catch(err){console.error(err);S=null;const m=$('#main');if(m)m.innerHTML=`<div class="msg warnm"><h2>Your save could not be loaded</h2><p>Something in it is from an older version or damaged (${esc(String(err&&err.message||err))}). You can copy it below to keep a backup, then start fresh.</p><textarea readonly style="width:100%;height:120px;font-family:var(--f-data);font-size:12px">${esc(localStorage.getItem(SAVE_KEY)||'')}</textarea><p><button class="btn danger" id="resetsave">Start a new save</button></p></div>`;const r=$('#resetsave');if(r)r.onclick=()=>{localStorage.removeItem(SAVE_KEY);location.reload()}}}
 function boot2(data){
+ authLoad();authFromHash();
  S=(data&&data.S)||load();const away0=S&&S.lastSeen?Date.now()-S.lastSeen:0;const snap0=S?{day:S.day,gr:(S.grWinners||[])[0],keys:S.cacheKeys||0}:null;
  if(S){const fix=b=>{if(b&&b.base&&b.dv>=4&&!baitFits(b)){const nb=genBait(b.r,b.g);const ratio=b.dur/MAX_DUR[b.r];Object.assign(b,{base:nb.base,s:nb.s,q:nb.q});b.dur=Math.round(ratio*MAX_DUR[b.r]);finishBait(b)}if(b&&b.dv>=4&&b.dv<6){const it=BAIT_BASES[b.g]&&BAIT_BASES[b.g].find(x=>x[0]===b.base);b.s=it?it[1]:Math.min(4,b.s+1);finishBait(b)}if(b&&b.dv>=4)b.dv=6};
   (S.baits||[]).forEach(fix);(S.shop||[]).forEach(fix);(S.market||[]).forEach(l=>fix(l.bait));if(S.cache)S.cache.boxes.forEach(x=>fix(x.bait));
@@ -1897,7 +1958,7 @@ function boot2(data){
  else if(S.exp){ // resume in the field
   if(S.exp.fight)UI.screen='fight';else if(S.exp.alert)UI.screen='watch';else{if(S.exp.trap&&!S.exp.alert){S.exp.trap=null}UI.screen='hunt'}}
  else if(UI.screen==='intro'||!UI.screen)UI.screen='temple';
- render();setTimeout(netInit,600);}
+ render();setTimeout(async()=>{await netInit();if(AUTH.tok)authSync()},600);authSettings().then(()=>{if(['system','intro'].includes(UI.screen))render()});}
 setInterval(()=>{if(!S)return;const cd=fmtCountdown(untilMidnight());const c=document.getElementById('clock');if(c)c.textContent=cd;document.querySelectorAll('[data-cd]').forEach(e=>e.textContent=cd);
  const beat=npcGoldRush();if(beat){toast(`${esc(beat)} won the Gold Rush. New quest: ${SPECIES[S.goldRush.sid].name}.`);if(UI.screen==='temple')render()}
  if(catchUpDays()){toast('A new day has begun: new market listings and Gene Key.');if(['watch','fight'].includes(UI.screen))renderTop();else render()}},1000);
