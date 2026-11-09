@@ -1,0 +1,3 @@
+Sound effects (all CC0):
+- click, tab, confirm, error, gene: Kenney "UI SFX Set" and "Interface Sounds" (www.kenney.nl)
+- coin, creak, trap, push, swing, snap, release, magic, roar, bottle: "RPG Sound Pack" by artisticDude (opengameart.org/content/rpg-sound-pack)
