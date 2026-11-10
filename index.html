@@ -690,7 +690,7 @@ function newGame(name){
   goldRush:null,week:null,market:[],shop:[],buffs:{},news:[],board:[],cache:null,cacheKeys:0,exp:null,lastCash:null,mute:false,stats:{caught:0,lost:0,trips:0,earned:0}};
  ['Flesh','Flesh','Plant','Mineral','Spirit','Fungus'].forEach(g=>S.baits.push(Object.assign(newBait(genBait(0,g)),{keep:true})));S.autoSellV=1;
  newDay(true);
- news('Welcome to the Temple, '+esc(S.name)+'. Your first gate is Veyra. Your six starter baits are in your locker. Go hunting.');
+ news('Welcome to the Temple, '+esc(S.name)+'. Your first gate is Veyra. Your six starter baits are in your bait locker, under Baits. Go hunting.');
  save();}
 function news(t){S.news.unshift({d:S.day,t,at:Date.now()});S.news=S.news.slice(0,8)}
 function recordLike(sid,bait){if(!bait)return;const d=bait;const sp=SPECIES[sid];const L=S.likes[sid]||(S.likes[sid]={types:[],sizes:[]});L.quals=L.quals||[];const sz=SIZES[d.s];let fresh=[];
@@ -1489,9 +1489,9 @@ function keeperLine(fresh){const L=S.lastCash;
 /* the Temple opens up as the player hunts, so the first screen is just the Keeper and "Start here" */
 function vBaits(){let body='';const n=S.baits.length;const set=new Set(S.bookmarks);
   body=`<p>${n<=10?`You own ${n} bait${n===1?'':'s'}, so you take everything hunting. Once you own more than 10, tick the ones to take.`:`You own ${n} baits and can take 10 hunting. Bookmarked baits go first; the bag fills up with your rarest, freshest others. Bookmarked: <b>${set.size}/10</b>.`}</p>${n>=10?`<div class="row" style="margin-bottom:8px"><button class="btn small" data-act="bmclear" ${set.size?'':'disabled'}>Uncheck all</button></div>`:''}
-  ${searchBox('bm')}<div class="tbl-wrap"><table class="lav" data-bt="bm"><thead><tr><th>Take</th><th>Bait</th><th>Group</th><th>Size</th><th>Rarity</th><th class="num">Durability</th></tr></thead><tbody>
-  ${S.baits.map(b=>{const d=b;return`<tr><td><input type="checkbox" id="bm${b.uid}" data-act="bookmark" data-uid="${b.uid}" ${n<10||set.has(b.uid)?'checked':''} ${n<10?'disabled':''} aria-label="Bookmark ${esc(d.n)}"></td><td>${bIco(d)}${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td><span class="r-${d.r}">${RARITY[d.r]}</span></td><td class="num">${durText(b)}</td></tr>`}).join('')}</tbody></table></div>`
- return`<div class="row" style="justify-content:space-between;margin-bottom:12px"><h1>Baits</h1><span class="muted">${S.baits.length} owned · ${carried().length} going hunting</span></div>`+body+`<p class="muted" style="font-size:13px;margin-top:12px">Buy, sell and combine baits in the <button class="btn small" data-act="go" data-to="lab">Laboratory</button></p>`}
+  ${searchBox('bm')}<div class="tbl-wrap"><table class="lav" data-bt="bm"><thead><tr><th>Take</th><th>Bait</th><th>Group</th><th>Size</th><th>Rarity</th><th>Qualities</th><th class="num">Durability</th></tr></thead><tbody>
+  ${S.baits.map(b=>{const d=b;return`<tr><td><input type="checkbox" id="bm${b.uid}" data-act="bookmark" data-uid="${b.uid}" ${n<10||set.has(b.uid)?'checked':''} ${n<10?'disabled':''} aria-label="Bookmark ${esc(d.n)}"></td><td>${bIco(d)}${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td><span class="r-${d.r}">${RARITY[d.r]}</span></td><td style="font-size:12px">${qchips(b)}</td><td class="num">${durText(b)}</td></tr>`}).join('')||'<tr><td colspan="7">No baits. Buy some in the Laboratory before you hunt.</td></tr>'}</tbody></table></div>`
+ return`<div class="row" style="justify-content:space-between;margin-bottom:12px"><h1>Bait locker</h1><span class="muted">${S.baits.length} owned · ${carried().length} going hunting</span></div>`+body+`<p class="muted" style="font-size:13px;margin-top:12px">Buy, sell and combine baits in the <button class="btn small" data-act="go" data-to="lab">Laboratory</button></p>`}
 function templeOpen(){const c=S.stats.caught||0,top=Math.max(0,...Object.values(S.bestiary||{}).map(b=>b.topTier||b.bestTier||0));const o=S.tOpen||(S.tOpen={});
  const set=(k,v)=>{if(v&&!o[k])o[k]=1};const vet=S.day>=3||c>=25;
  set('home',S.stats.trips>0||vet);set('tourn',c>=3||vet);set('rush',c>=8||top>=5||vet);set('misf',(S.misfortune||0)>0||S.cacheUnlocked||(S.cacheKeys||0)>0||top>=8);
@@ -1570,7 +1570,7 @@ function enhanceBaitTables(){
  document.querySelectorAll('table[data-bs]').forEach(t=>applyBaitTable(t.dataset.bs));
  document.querySelectorAll('input[data-bq]').forEach(inp=>{if(inp._wired)return;inp._wired=1;inp.addEventListener('input',()=>{UI.tq=UI.tq||{};UI.tq[inp.dataset.bq]=inp.value;applyBaitTable(inp.dataset.bq)})});
  document.querySelectorAll('button[data-bqclear]').forEach(btn=>{if(btn._wired)return;btn._wired=1;btn.addEventListener('click',()=>{const id=btn.dataset.bqclear;const inp=document.getElementById('bq-'+id);UI.tq=UI.tq||{};UI.tq[id]='';if(inp){inp.value='';inp.focus()}applyBaitTable(id)})})}
-function vLab(){const t=UI.tab.lab;let body='';
+function vLab(){if(!['buy','market','synth'].includes(UI.tab.lab))UI.tab.lab='buy';const t=UI.tab.lab;let body='';
  if(t==='buy'){body=`<h2>Buy common baits</h2><p>Every bait lists its group, size and qualities. Different souls want different things, so experimenting is part of the hunt.</p>
   ${searchBox('shop')}<div class="tbl-wrap"><table class="lav" data-bs="shop"><thead><tr>${[['n','Bait',''],['g','Group',''],['s','Size',''],['q','Qualities',''],['p','Price','num']].map(([k,l,c])=>`<th class="${c}" aria-sort="${UI.shopSort&&UI.shopSort.k===k?(UI.shopSort.dir>0?'ascending':'descending'):'none'}"><button class="sorth" data-act="ssort" data-k="${k}">${l} ${UI.shopSort&&UI.shopSort.k===k?(UI.shopSort.dir>0?'▲':'▼'):'<span style="opacity:.4">↕</span>'}</button></th>`).join('')}<th></th></tr></thead><tbody>
   ${shopSorted().map(([d,i])=>`<tr><td>${bIco(d)}${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td style="font-size:12px">${qchips(d)}</td><td class="num">${money(d.p)}</td><td><button class="btn small" data-act="buy" data-i="${i}" ${S.money<d.p?'disabled':''}>Buy</button></td></tr>`).join('')}</tbody></table></div>
@@ -1593,7 +1593,7 @@ function vLab(){const t=UI.tab.lab;let body='';
   <h3 style="margin-top:12px">Who carries which genes</h3><p class="muted" style="font-size:13px">${Object.keys(S.bestiary).map(s=>`${SPECIES[s].name}: <span style="font-family:var(--f-data)">${SPECIES[s].genes}</span>`).join(' · ')||'Catch souls to learn which genes they carry.'}</p>`}
  else{body=`<h2>Bait locker</h2>${searchBox('lock')}<div class="tbl-wrap"><table class="lav" data-bt="lock"><thead><tr><th>Bait</th><th>Group</th><th>Size</th><th>Rarity</th><th>Qualities</th><th class="num">Durability</th></tr></thead><tbody>
   ${S.baits.length?S.baits.map(b=>`<tr><td>${bIco(b)}${esc(b.n)}</td><td>${gIco(b.g)}${b.g}</td><td>${SIZES[b.s]}</td><td><span class="r-${b.r}">${RARITY[b.r]}</span></td><td style="font-size:12px">${qchips(b)}</td><td class="num">${durText(b)}</td></tr>`).join(''):'<tr><td colspan="6">No baits. Buy some before you hunt.</td></tr>'}</tbody></table></div>`}
- return`<h1 style="margin-bottom:12px">Laboratory</h1>`+tabs('lab',[['buy','Buy Common Baits'],['market','P2P Market'],['synth','Synthesis'],['locker','Bait Locker']])+body}
+ return`<h1 style="margin-bottom:12px">Laboratory</h1>`+tabs('lab',[['buy','Buy Common Baits'],['market','P2P Market'],['synth','Synthesis']])+body}
 
 function bestInfoRow(sp,b){const fk=(S.found&&S.found[sp.id])||[];
  const all=[];REGIONS.forEach((R,ri)=>R.areas.forEach((A,ai)=>{if(A.sp[sp.id])all.push(areaKey(ri,ai))}));
