@@ -426,6 +426,7 @@ button.cache:not(:disabled):hover .chest{transform:translateY(-2px)}
 .bchead{display:flex;gap:14px;align-items:center}.bctags{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .bcfav{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 12px}.bcfav li{display:flex;align-items:center;gap:8px;font-size:14px}.bcfav .unk{color:var(--ink-2);font-family:var(--f-data);letter-spacing:.08em}.bcfav .q{display:inline-flex;width:32px;height:32px;align-items:center;justify-content:center;border:1px dashed var(--ink-2);border-radius:4px;opacity:.6}
 @media(max-width:480px){.bicobig{width:72px;height:72px;background-size:1728px 1584px;background-position:calc(var(--bx)*-2.25px) calc(var(--by)*-2.25px)}}
+.tearwarn{border:2px solid #ffb36b;background:rgba(255,179,107,.12);color:var(--ink);border-radius:6px;padding:8px 10px;margin:0 0 8px;font-size:13px;line-height:1.4}.tearwarn.now{border-color:#ff5a5a;background:rgba(255,90,90,.16);animation:tearpulse 1s ease-in-out infinite}@keyframes tearpulse{50%{box-shadow:0 0 0 3px rgba(255,90,90,.35)}}@media(prefers-reduced-motion:reduce){.tearwarn.now{animation:none}}
 .namebox{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.namebox input{flex:1 1 160px;min-width:0}
 </style>
 
@@ -1238,7 +1239,7 @@ function fightAction(kind){
   UI.fmsg={t:t+DANGER[f.danger].n+'.',c:''};UI.shake=0;save();if(!updateFight({kind:'push',text:'Push'}))render();return}
  // pull
  const P=pullPower(f,F);const resist=resistChance(f,P);f.pulls=(f.pulls||0)+1;if(f.pulls>40)f.end=Math.max(5,f.end-2);
- const DL=DANGER[f.danger];const tear=(f.streak||0)>=5&&f.end>=85;
+ const DL=DANGER[f.danger];const tear=Math.random()<tearChance(f);
  if(tear||Math.random()<1/DL.odds){sfx.snap();const br=wearBait(f.baitUid,lossDur);S.stats.lost++;logx(tear?`Lost ${an(sp.name)} ${TIERS[f.tier]}. It tore free.`:`Lost ${an(sp.name)} ${TIERS[f.tier]}. The line snapped at ${DL.n}.`);
   let pity='';const unlucky=!tear&&!f.fromEcho&&f.danger<=1&&f.tier>=5;
   if(unlucky){e.echoes=(e.echoes||[]);e.echoes.push({sid:f.sid,tier:f.tier,region:e.region,area:f.area});const pts=misfortunePts(f.tier);const got=addMisfortune(pts);
@@ -1246,12 +1247,12 @@ function fightAction(kind){
    pity=`<br><b style="color:var(--gold)">Unlucky.</b> The ${sp.name} left a <b>lingering echo</b> here: your next trap in ${esc(REGIONS[e.region].areas[f.area].n)} will hook it again, at ${TIERS[f.tier]} or better. Misfortune +${pts} (${S.misfortune}/${MISFORTUNE_PER_KEY})${got.keys?`, and it became ${got.keys>1?got.keys+' cache keys':'a cache key'}!`:'.'}`}
   else if(f.tier>=5){const pts=Math.max(1,Math.floor(misfortunePts(f.tier)/2));const got=addMisfortune(pts);pity=`<br>Misfortune +${pts} (${S.misfortune}/${MISFORTUNE_PER_KEY})${got.keys?`, and it became ${got.keys>1?got.keys+' cache keys':'a cache key'}!`:'.'}`}
   if(unlucky&&S.goldRush&&!S.goldRush.done&&!S.goldRush.consoled&&f.sid===S.goldRush.sid&&f.tier>=S.goldRush.minTier){S.goldRush.consoled=true;const got=addMisfortune(5);pity+=`<br>It was the Gold Rush target. Misfortune +5 as consolation (once per quest).`}
-  e.fight=null;UI.msg={t:`${tear?`The ${sp.name} resisted five times in a row with its endurance high and tore free.`:`The line snapped at ${DL.n} danger (a 1 in ${DL.odds} chance) and the ${sp.name} escaped.`} Your bait lost ${S.exp.buffs.ironline?0:lossDur} durability.${br?' '+br:''}${pity}`,c:unlucky?'warnm':'bad'};save();snapBeat(DL,sp.name,tear);return}
+  e.fight=null;UI.msg={t:`${tear?`The ${sp.name} resisted ${f.streak} times in a row with its endurance high and tore free.`:`The line snapped at ${DL.n} danger (a 1 in ${DL.odds} chance) and the ${sp.name} escaped.`} Your bait lost ${S.exp.buffs.ironline?0:lossDur} durability.${br?' '+br:''}${pity}`,c:unlucky?'warnm':'bad'};save();snapBeat(DL,sp.name,tear);return}
  let fx=null;
  if(Math.random()<resist){
   f.streak=(f.streak||0)+1;f.danger=Math.min(3,f.danger+1);f.end=Math.max(5,f.end-1);let regen='';
   if(Math.random()<(elx==='tide'?Math.min(.9,FIGHT.regen[0]+.15*k2):FIGHT.regen[0])){const g=Math.max(1,Math.round(f.maxhp*rand(FIGHT.regen[1],FIGHT.regen[2])));f.hp=Math.min(f.maxhp-1,f.hp+g);regen=` It even recovered ${g} HP.`}
-  sfx.resist(f.danger);UI.fmsg={t:`The ${sp.name} resists your pull! Danger is ${DANGER[f.danger].n}: a 1 in ${DANGER[f.danger].odds} chance the next pull snaps.${regen}`,c:f.danger>=2?'bad':'warnm'};UI.shake=6;fx={kind:'resisted',text:'Resisted!'};
+  sfx.resist(f.danger);UI.fmsg={t:`The ${sp.name} resists your pull! Danger is ${DANGER[f.danger].n}: a 1 in ${DANGER[f.danger].odds} chance the next pull snaps.${regen}`,c:f.danger>=2?'bad':'warnm'};UI.shake=6;fx={kind:'resisted',text:'Resisted!'};if(f.streak>=4&&f.end>=85){UI.fmsg.c='bad';setTimeout(()=>sfx.error(),180)}
  }else{
   let mul=(elx==='flame'?(1+.2*k2)*(f.wx==='Heatwave'?1.3:1):1)*FIGHT.dangerDmg[f.danger]*FIGHT.stanceDmg[f.stance||'steady'],note='';
   if(elx==='frost'&&f.pulls%3===0){mul*=1.5;note=' It\'s numb from the cold: a heavy hit!'}
@@ -1262,6 +1263,10 @@ function fightAction(kind){
   if(f.hp<=0){fx={kind:'ko',text:'-'+dmg};save();heave(f);return}
   UI.fmsg={t:`You pull it in for ${dmg} damage${FIGHT.dangerDmg[f.danger]>1&&!thrash?' (danger adds force)':''}.${note}${thrash}`,c:thrash?'warnm':''};UI.shake=3;fx={kind:'hit',text:'-'+dmg};}
  if(S.exp.fight)nextStance(f);save();if(!updateFight(fx))render();}
+/* a soul that shrugs off pull after pull while still fresh starts to tear free: a warning at 4 straight resists, then a rising chance per pull */
+function tearChance(f){const s=f.streak||0;return s>=5&&f.end>=85?Math.min(.9,.5+.15*(s-5)):0}
+function tearWarn(f){const s=f.streak||0;if(s<4||f.end<85)return'';const p=Math.round(tearChance(f)*100);
+ return`<div class="tearwarn ${p?'now':''}" role="alert"><b>${p?`It is tearing free: ${p}% chance your next pull loses it.`:'It is close to tearing free.'}</b> ${s} pulls in a row resisted while its endurance is high. A pull that lands resets this. <b>Wait</b> for a Loose stance before you pull${p?'':', or one more resist puts it at risk'}.</div>`}
 function captured(){const e=S.exp,f=e.fight;const sp=SPECIES[f.sid];
  const be=S.bestiary[f.sid]||(S.bestiary[f.sid]={n:0,best:0,bestTier:0,types:[]});
  const bait=S.baits.find(b=>b.uid===f.baitUid);if(bait&&!be.types.includes(bait.g))be.types.push(bait.g);if(bait){S.baitCaught=S.baitCaught||{};(S.baitCaught[bait.base]=S.baitCaught[bait.base]||{})[f.sid]=1}
@@ -1824,12 +1829,12 @@ function vFight(){const e=S.exp,f=e.fight;const sp=SPECIES[f.sid];const bait=S.b
     <dt>Level</dt><dd>${f.lvl} · ${elIcon(sp.el)} <span style="color:${EL[sp.el].c[1]}">${EL[sp.el].name}</span></dd>
     <dt>Endurance</dt><dd>${f.end}</dd><dt>Your pull</dt><dd><b>${fp.total}</b> <span class="muted">(${fp.parts.filter(p=>p[1]).map(p=>p[0].replace(' skill','')+' '+p[1]).join(' + ')||'base'})</span></dd>
     <dt>Likes</dt><dd>${likesText(f.sid)||'—'}</dd><dt>Bait</dt><dd>${bait?esc(B(bait).n)+' '+durText(bait):'—'}</dd></dl></div>
-   <div class="fightbtns"><button class="btn primary ${f.danger>=3?'risk':''}" data-act="pull">Pull <kbd>Space</kbd></button>
-   <p class="oddsline"><span class="olg">Next pull: <b>${f.hidden?'~':''}${Math.round(rs*100)}%</b> resist${f.hidden?' (stance hidden)':''} · snap <b>1 in ${DANGER[f.danger].odds}</b> · about <b>${dm}</b> damage</span><span class="osm">Pull: <b>${f.hidden?'~':''}${Math.round(rs*100)}%</b> resist · snap <b>1/${DANGER[f.danger].odds}</b> · ~<b>${dm}</b> dmg</span></p>
+   <div class="fightbtns">${tearWarn(f)}<button class="btn primary ${f.danger>=3||tearChance(f)>0?'risk':''}" data-act="pull">Pull <kbd>Space</kbd></button>
+   <p class="oddsline"><span class="olg">Next pull: <b>${f.hidden?'~':''}${Math.round(rs*100)}%</b> resist${f.hidden?' (stance hidden)':''} · snap <b>1 in ${DANGER[f.danger].odds}</b>${tearChance(f)?` · <b style="color:#ff7a7a">tear ${Math.round(tearChance(f)*100)}%</b>`:''} · about <b>${dm}</b> damage</span><span class="osm">Pull: <b>${f.hidden?'~':''}${Math.round(rs*100)}%</b> resist · snap <b>1/${DANGER[f.danger].odds}</b>${tearChance(f)?` · <b style="color:#ff7a7a">tear ${Math.round(tearChance(f)*100)}%</b>`:''} · ~<b>${dm}</b> dmg</span></p>
    <div class="row" style="gap:8px"><button class="btn" style="flex:1;justify-content:center" data-act="push" ${canPush(f)?'':'disabled'} title="${f.danger===0?'Danger is already green':'Lower danger one level. It heals a little and digs in harder.'}">Push <kbd>S</kbd></button><button class="btn" style="flex:1;justify-content:center" data-act="wait" title="Hold the line: its stance changes, and it may test the line">Wait <kbd>W</kbd></button><button class="btn danger" style="flex:1;justify-content:center" data-act="release">Release <kbd>R</kbd></button></div></div>
    <div class="msg fightmsg ${UI.fmsg?UI.fmsg.c:''}">${UI.fmsg?UI.fmsg.t:''}</div></div>
   <div class="box"><h3>${sp.name}</h3><dl class="dl"><dt>Tier</dt><dd class="${tierClass(f.tier)}" style="font-weight:700">${TIERS[f.tier]}</dd><dt>Level</dt><dd>${f.lvl}</dd><dt>Element</dt><dd style="color:${EL[sp.el].c[1]}">${elIcon(sp.el)} ${EL[sp.el].name}</dd><dt>Endurance</dt><dd>${f.end}</dd><dt>Likes</dt><dd>${likesText(f.sid)||'—'}</dd><dt>Bait</dt><dd>${bait?B(bait).n+' '+durText(bait):'—'}</dd><dt>Time left</dt><dd>${fmtClock(e.clock)}</dd></dl>
-   <details class="rules"><summary>How pulling works</summary><p class="muted" style="font-size:12px">Every pull risks snapping the line: 1 in 200 at Green, 1 in 100 at Blue, 1 in 8 at Purple, 1 in 2 at Red. If it resists five times in a row while its endurance is 85 or more, it tears free. Wait reveals a hidden stance. After 40 pulls it starts to tire. A resisted pull raises danger, but pulls landed at higher danger hit much harder. Push lowers danger one level; the soul heals a little and its endurance rises, so each push makes the rest of the fight tougher. Watch the stance: Loose pulls land often and hit hard, Braced ones don't. Wait lets the stance change, but it may test the line. At 0 HP you heave it in automatically. Release saves half your bait wear.</p></details></div></div>`}
+   <details class="rules"><summary>How pulling works</summary><p class="muted" style="font-size:12px">Every pull risks snapping the line: 1 in 200 at Green, 1 in 100 at Blue, 1 in 8 at Purple, 1 in 2 at Red. If it resists four times in a row while its endurance is 85 or more, you get a warning; from the fifth, each pull has a growing chance (50%, then 65%, 80%, 90%) that it tears free. One pull that lands clears it. Wait reveals a hidden stance. After 40 pulls it starts to tire. A resisted pull raises danger, but pulls landed at higher danger hit much harder. Push lowers danger one level; the soul heals a little and its endurance rises, so each push makes the rest of the fight tougher. Watch the stance: Loose pulls land often and hit hard, Braced ones don't. Wait lets the stance change, but it may test the line. At 0 HP you heave it in automatically. Release saves half your bait wear.</p></details></div></div>`}
 function tierOdds(t){const tot=TIER_W.reduce((a,b)=>a+b,0);return Math.max(1,Math.round(tot/TIER_W[t]))}
 function vCaught(){const c=UI.caught,m=c.m,sp=SPECIES[m.sid];const e=S.exp;const big=m.tier>=9,boss=m.tier>=5;
  const gr=S.goldRush;const grHit=gr&&!gr.done&&m.sid===gr.sid&&m.tier>=gr.minTier;
