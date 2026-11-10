@@ -1731,7 +1731,7 @@ function vHunt(){const e=S.exp;const R=REGIONS[e.region];const A=R.areas[e.area]
   <label for="autotier">At least</label><select id="autotier">${TIERS.slice(0,GODLY).map((n,t)=>`<option value="${t}" ${pr.minTier===t?'selected':''}>${n}</option>`).join('')}</select>
   <label for="autopush">Push from</label><select id="autopush"><option value="1" ${(pr.pushAt||1)===1?'selected':''}>Blue (safer)</option><option value="2" ${pr.pushAt===2?'selected':''}>Purple (faster)</option></select>
   <label style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink)"><input type="checkbox" id="autorelease" ${pr.release?'checked':''}> Release other catches <span class="muted">(never Epic or better)</span></label>
-  <label style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink)"><input type="checkbox" id="autohand" ${pr.handoff!==false?'checked':''}> Hand Boss-tier fights to me</label>
+  <label for="autohand">Hand fights to me</label><select id="autohand">${(h=>[[-1,'Never'],[5,'Boss and up'],[8,'Epic and up'],[9,'Legendary and up'],[10,'Perfect and up']].map(([v,l])=>`<option value="${v}" ${h===v?'selected':''}>${l}</option>`).join(''))(typeof pr.handoff==='number'?pr.handoff:pr.handoff===false?-1:5)}</select>
   <button class="btn gold" data-act="autostart">Start</button>
   <span class="muted" style="font-size:12px;flex-basis:100%">Uses the bait and trap time above. Stops when it catches the target, the bait breaks, or only the walk back to the gate plus ${AUTO_MIN_CLOCK} minutes is left.${here.length>known.length?` ${here.length-known.length} soul${here.length-known.length>1?'s':''} here you haven't seen yet can't be picked.`:''}</span></div>`})():''}
  <h3 style="margin-top:18px">Soul Tank · ${e.tank.length}/${TANK_MAX}${e.tank.length>TANK_MAX?` <span style="color:var(--crit);font-size:14px">· ${e.tank.length-TANK_MAX} over. Release extras to leave.</span>`:''}</h3>${tankHtml()}`}
@@ -1745,7 +1745,7 @@ function autoTargetText(A){return`${A.sid==='any'?'any soul':SPECIES[A.sid].name
 function startAuto(){const e=S.exp;const uid=+$('#trapbait').value;const mins=+$('#trapmin').value;
  if(!S.baits.find(b=>b.uid===uid)){sfx.error();toast.bad('Pick a bait for Auto-Mode.');return}
  UI.lastBait=uid;UI.lastMins=mins;
- UI.auto={sid:$('#autotarget').value,minTier:+$('#autotier').value,release:$('#autorelease').checked,pushAt:+$('#autopush').value,handoff:$('#autohand')?$('#autohand').checked:true,baitUid:uid,mins,running:true,stop:null,
+ UI.auto={sid:$('#autotarget').value,minTier:+$('#autotier').value,release:$('#autorelease').checked,pushAt:+$('#autopush').value,handoff:$('#autohand')?+$('#autohand').value:5,baitUid:uid,mins,running:true,stop:null,
   stats:{traps:0,bites:0,caught:0,escaped:0,released:0},started:e.clock};
  UI.autoPrefs={sid:UI.auto.sid,minTier:UI.auto.minTier,release:UI.auto.release,pushAt:UI.auto.pushAt,handoff:UI.auto.handoff};
  e.trap=null;e.alert=null;logx(`Auto-Mode started: ${autoTargetText(UI.auto)}.`,true);UI.msg=null;UI.screen='auto';render()}
@@ -1759,7 +1759,7 @@ function autoStep(dt){const A=UI.auto;if(!A||!A.running)return;let budget=Math.m
   const bait=S.baits.find(b=>b.uid===A.baitUid);
   if(!bait&&!e.fight){stopMsg='your bait broke.';break}
   if(e.clock<autoReserve()&&!e.fight&&!e.alert){stopMsg=`only ${e.clock} minutes left, just enough to walk back to the gate (${moveCost(e.area,0)} min).`;break}
-  if(e.alert){A.stats.bites++;UI.screen='watch';engage();if(A.handoff&&e.fight&&e.fight.tier>=5){stopMsg=`a <b>${TIERS[e.fight.tier]} ${SPECIES[e.fight.sid].name}</b> is on the line. It's yours to fight.`;good=true;A.handed=true;break}continue}
+  if(e.alert){A.stats.bites++;UI.screen='watch';engage();if(A.handoff>=0&&e.fight&&e.fight.tier>=A.handoff){stopMsg=`a <b>${TIERS[e.fight.tier]} ${SPECIES[e.fight.sid].name}</b> is on the line. It's yours to fight.`;good=true;A.handed=true;break}continue}
   if(e.fight){ // fight it out: pull, but push back whenever danger reaches Purple
    // auto rules: pull on Green; above Green, push whenever pushing is allowed; otherwise pull on any colour
    let n=0;while(e.fight&&n++<600){const f=e.fight;fightAction(f.danger>=(A.pushAt||1)&&canPush(f)?'push':'pull')}
