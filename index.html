@@ -420,6 +420,12 @@ button.cache:not(:disabled):hover .chest{transform:translateY(-2px)}
 .bico{display:inline-block;width:24px;height:24px;vertical-align:-7px;margin-right:6px;background-image:url(ui/baits.png);background-size:576px 528px;background-position:calc(var(--bx)*-.75px) calc(var(--by)*-.75px);background-repeat:no-repeat;image-rendering:pixelated;flex:none}
 #trapico .bico{width:32px;height:32px;background-size:768px 704px;background-position:calc(var(--bx)*-1px) calc(var(--by)*-1px);vertical-align:middle;margin:0 4px}
 .btn.gsign{display:inline-flex;align-items:center;gap:10px;background:#fff!important;background-image:none!important;border-image:none!important;border:1px solid #dadce0!important;border-radius:4px;color:#1f1f1f!important;box-shadow:0 2px 0 rgba(0,0,0,.35);font-weight:600;padding:9px 16px}.btn.gsign::before,.btn.gsign::after{display:none!important}.btn.gsign:hover{background:#f3f6fb!important}.gsign .g{font:700 17px/1 Arial,sans-serif;color:#4285f4}
+.bicobtn{background:none;border:0;padding:2px;margin:-2px 4px -2px -2px;cursor:pointer;border-radius:4px;vertical-align:middle}.bicobtn .bico{margin:0;vertical-align:middle}.bicobtn:hover,.bicobtn:focus-visible{outline:2px solid var(--soul);background:rgba(127,230,210,.12)}
+.bicobig{display:block;flex:none;width:96px;height:96px;background-image:url(ui/baits.png);background-size:2304px 2112px;background-position:calc(var(--bx)*-3px) calc(var(--by)*-3px);background-repeat:no-repeat;image-rendering:pixelated;background-color:rgba(255,255,255,.04);border-radius:8px}
+.modal.baitcard{border:2px solid var(--soul);border-image:none;background:#151821;padding:18px 20px;max-height:calc(100vh - 32px);overflow:auto}
+.bchead{display:flex;gap:14px;align-items:center}.bctags{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.bcfav{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 12px}.bcfav li{display:flex;align-items:center;gap:8px;font-size:14px}.bcfav .unk{color:var(--ink-2);font-family:var(--f-data);letter-spacing:.08em}.bcfav .q{display:inline-flex;width:32px;height:32px;align-items:center;justify-content:center;border:1px dashed var(--ink-2);border-radius:4px;opacity:.6}
+@media(max-width:480px){.bicobig{width:72px;height:72px;background-size:1728px 1584px;background-position:calc(var(--bx)*-2.25px) calc(var(--by)*-2.25px)}}
 .namebox{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.namebox input{flex:1 1 160px;min-width:0}
 </style>
 
@@ -1247,7 +1253,7 @@ function fightAction(kind){
  if(S.exp.fight)nextStance(f);save();if(!updateFight(fx))render();}
 function captured(){const e=S.exp,f=e.fight;const sp=SPECIES[f.sid];
  const be=S.bestiary[f.sid]||(S.bestiary[f.sid]={n:0,best:0,bestTier:0,types:[]});
- const bait=S.baits.find(b=>b.uid===f.baitUid);if(bait&&!be.types.includes(bait.g))be.types.push(bait.g);
+ const bait=S.baits.find(b=>b.uid===f.baitUid);if(bait&&!be.types.includes(bait.g))be.types.push(bait.g);if(bait){S.baitCaught=S.baitCaught||{};(S.baitCaught[bait.base]=S.baitCaught[bait.base]||{})[f.sid]=1}
  const first=be.n===0,pb=be.n>0&&f.maxhp>be.best;const prevTier=be.bestTier||0;f.firstTop=f.tier>=9&&(be.topTier||0)<f.tier;be.n++;if(f.maxhp>be.best){be.best=f.maxhp;be.bestTier=f.tier}if(f.tier>(be.topTier||0))be.topTier=f.tier;codexCheck(prevTier,f.tier);
  if(first)natCheck();contractProgress(f,bait,first);S.mastery=S.mastery||{};S.mastery[sp.el]=(S.mastery[sp.el]||0)+1;const wear=catchWear(f.tier);const br=wearBait(f.baitUid,wear,true);e.fight=null;checkRegionSet(e.region);
  S.stats.caught++;logx(`Captured ${sp.name} ${f.maxhp} HP (${TIERS[f.tier]}).`,true);
@@ -1487,11 +1493,26 @@ function keeperLine(fresh){const L=S.lastCash;
  const tips=['Deeper areas hold rarer souls, but the walk back to the gate grows longer. Mind the spare time.','The gate cashes in only so many souls. Release the weakest before you step through.','Gold lines in the field feed tell you what a soul eats and what size it wants.','A Gate Anchor shortens the walk back from anywhere. Worth its price for deep hunters.','Push when the danger turns Blue. A snapped line loses the soul and wears the bait.','The Guild pays well for urgent quests. Check them before you set out.'];
  return tips[(S.day+S.stats.trips)%tips.length]}
 /* the Temple opens up as the player hunts, so the first screen is just the Keeper and "Start here" */
+/* ---- bait card: what a bait is, and which souls count it as a favourite ---- */
+const GROUP_BLURB={Flesh:'Meat and scraps. Hunters and scavengers come for it.',Plant:'Leaves, roots and fruit. Grazers and gentle things come for it.',Mineral:'Stone, ore and gems. Things made of earth come for it.',Spirit:'Keepsakes and offerings. The restless dead come for it.',Arcane:'Charms and worked magic. Things born of spellcraft come for it.',Fungus:'Mushrooms and moulds. Things of rot and damp come for it.',Insect:'Bugs, grubs and their makings. Quick, small hunters come for it.',Brew:'Drinks, tonics and potions. Thirsty and curious things come for it.'};
+function baitDesc(b){const q=b.q.map(i=>QUALS[i]).filter(Boolean).map(qualPhrase);const an=/^[AEIOU]/.test(SIZES[b.s])?'An':'A';
+ return`${an} ${SIZES[b.s].toLowerCase()} ${b.g.toLowerCase()} bait${q.length?', '+(q.length>1?q.slice(0,-1).join(', ')+' and '+q[q.length-1]:q[0]):''}. ${GROUP_BLURB[b.g]||''}`}
+/* a favourite: the soul eats this group, wants this size, and likes at least one of the bait's qualities */
+function baitFavourites(b){const known=[],hidden=[];const got=(S.baitCaught&&S.baitCaught[b.base])||{};
+ Object.values(SPECIES).forEach(sp=>{if(sp.diet[b.g]&&sp.bs===b.s&&b.q.some(q=>sp.likes.includes(q)))(got[sp.id]?known:hidden).push(sp)});return{known,hidden}}
+function baitModal(){const b=UI.baitInfo&&S.baits.find(x=>x.uid===UI.baitInfo);if(!b){UI.baitInfo=null;return''}const F=baitFavourites(b);const p=BAIT_ICO[b.base];
+ return`<div class="modalback" data-act="baitclose"></div><div class="modal baitcard" role="dialog" aria-modal="true" aria-labelledby="bait-h">
+  <div class="bchead">${p?`<span class="bicobig" style="--bx:${p[0]};--by:${p[1]}" aria-hidden="true"></span>`:''}<div><h2 id="bait-h" style="margin:0 0 6px">${esc(b.n)}</h2>
+   <div class="bctags"><span class="chip r-${b.r}">${RARITY[b.r]}</span><span class="chip">${gIco(b.g)}${b.g}</span><span class="chip">${SIZES[b.s]}</span>${qchips(b)}</div></div></div>
+  <p style="margin:12px 0 6px">${esc(baitDesc(b))}</p><p class="muted" style="font-size:13px;margin:0 0 12px">Durability ${durText(b)}</p>
+  <h3 style="margin:0 0 6px">Favorite of souls:</h3>
+  ${F.known.length||F.hidden.length?`<ul class="bcfav">${F.known.map(sp=>`<li><canvas width="32" height="32" data-sprite="${sp.id}" style="width:32px;height:32px;image-rendering:pixelated"></canvas><b>${esc(sp.name)}</b></li>`).join('')}${F.hidden.map(()=>`<li class="unk"><span class="q" aria-hidden="true">?</span>??????</li>`).join('')}</ul><p class="muted" style="font-size:12px;margin:8px 0 0">${F.hidden.length?'Catch a soul with this bait to reveal a ??????.':'Every soul that favours this bait is known.'}</p>`:'<p class="muted" style="margin:0">No soul counts this exact bait as a favourite.</p>'}
+  <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary" id="bait-close" data-act="baitclose">Close <kbd>Esc</kbd></button></div></div>`}
 function vBaits(){let body='';const n=S.baits.length;const set=new Set(S.bookmarks);
   body=`<p>${n<=10?`You own ${n} bait${n===1?'':'s'}, so you take everything hunting. Once you own more than 10, tick the ones to take.`:`You own ${n} baits and can take 10 hunting. Bookmarked baits go first; the bag fills up with your rarest, freshest others. Bookmarked: <b>${set.size}/10</b>.`}</p>${n>=10?`<div class="row" style="margin-bottom:8px"><button class="btn small" data-act="bmclear" ${set.size?'':'disabled'}>Uncheck all</button></div>`:''}
   ${searchBox('bm')}<div class="tbl-wrap"><table class="lav" data-bt="bm"><thead><tr><th>Take</th><th>Bait</th><th>Group</th><th>Size</th><th>Rarity</th><th>Qualities</th><th class="num">Durability</th></tr></thead><tbody>
-  ${S.baits.map(b=>{const d=b;return`<tr><td><input type="checkbox" id="bm${b.uid}" data-act="bookmark" data-uid="${b.uid}" ${n<10||set.has(b.uid)?'checked':''} ${n<10?'disabled':''} aria-label="Bookmark ${esc(d.n)}"></td><td>${bIco(d)}${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td><span class="r-${d.r}">${RARITY[d.r]}</span></td><td style="font-size:12px">${qchips(b)}</td><td class="num">${durText(b)}</td></tr>`}).join('')||'<tr><td colspan="7">No baits. Buy some in the Laboratory before you hunt.</td></tr>'}</tbody></table></div>`
- return`<div class="row" style="justify-content:space-between;margin-bottom:12px"><h1>Bait locker</h1><span class="muted">${S.baits.length} owned · ${carried().length} going hunting</span></div>`+body+`<p class="muted" style="font-size:13px;margin-top:12px">Buy, sell and combine baits in the <button class="btn small" data-act="go" data-to="lab">Laboratory</button></p>`}
+  ${S.baits.map(b=>{const d=b;return`<tr><td><input type="checkbox" id="bm${b.uid}" data-act="bookmark" data-uid="${b.uid}" ${n<10||set.has(b.uid)?'checked':''} ${n<10?'disabled':''} aria-label="Bookmark ${esc(d.n)}"></td><td><button class="bicobtn" data-act="baitinfo" data-uid="${b.uid}" aria-label="About ${esc(d.n)}" title="About this bait">${bIco(d)}</button>${esc(d.n)}</td><td>${gIco(d.g)}${d.g}</td><td>${SIZES[d.s]}</td><td><span class="r-${d.r}">${RARITY[d.r]}</span></td><td style="font-size:12px">${qchips(b)}</td><td class="num">${durText(b)}</td></tr>`}).join('')||'<tr><td colspan="7">No baits. Buy some in the Laboratory before you hunt.</td></tr>'}</tbody></table></div>`
+ return`<div class="row" style="justify-content:space-between;margin-bottom:12px"><h1>Bait locker</h1><span class="muted">${S.baits.length} owned · ${carried().length} going hunting</span></div>`+body+`<p class="muted" style="font-size:13px;margin-top:12px">Buy, sell and combine baits in the <button class="btn small" data-act="go" data-to="lab">Laboratory</button> · Tap a bait's picture for its details.</p>`+baitModal()}
 function templeOpen(){const c=S.stats.caught||0,top=Math.max(0,...Object.values(S.bestiary||{}).map(b=>b.topTier||b.bestTier||0));const o=S.tOpen||(S.tOpen={});
  const set=(k,v)=>{if(v&&!o[k])o[k]=1};const vet=S.day>=3||c>=25;
  set('home',S.stats.trips>0||vet);set('tourn',c>=3||vet);set('rush',c>=8||top>=5||vet);set('misf',(S.misfortune||0)>0||S.cacheUnlocked||(S.cacheKeys||0)>0||top>=8);
@@ -1851,7 +1872,7 @@ function after(scr){
 
 /* ================= ACTIONS ================= */
 document.addEventListener('pointerdown',e=>{const b=e.target.closest('button,[data-act]');if(b&&!b.disabled&&S)sfx.click(['go','tab'].includes(b.dataset.act)?'tab':'')},true);
-function go(to){if(S.exp&&!['hunt','watch','fight','caught','auto'].includes(to)&&to!=='cashin'){return}
+function go(to){UI.baitInfo=null;if(S.exp&&!['hunt','watch','fight','caught','auto'].includes(to)&&to!=='cashin'){return}
  if(to==='temple'&&UI.screen==='cashin'&&S.lastCash&&S.lastCash.grHit&&!S.lastCash.grClaimed)return;
  if(to==='temple'){UI.tab.temple='overview';UI.cacheMsg=null}
  UI.screen=to;UI.msg=null;render();window.scrollTo(0,0)}
@@ -1906,6 +1927,8 @@ function act(a,d,el){
  case'netcancel':netCancel(+d.lid);break;
  case'netretry':NET.at={};if(!NET.id)netInit();else netBeat();netMarket(true);break;
  case'recwin':UI.recAll=!!d.all;render();break;
+ case'baitinfo':UI.baitInfo=+d.uid;render();setTimeout(()=>{const c=$('#bait-close');if(c)c.focus()},30);break;
+ case'baitclose':UI.baitInfo=null;render();break;
  case'lt_cancel':UI.lowTimeAsk=null;render();break;
  case'lt_trap':{const a=UI.lowTimeAsk;UI.lowTimeAsk=null;if(a)startTrap(a);break}
  case'lt_gate':{UI.lowTimeAsk=null;const e=S.exp;if(!e)break;if(e.area)moveTo(0);else if(e.tank.length>TANK_MAX){UI.msg={t:`Release ${e.tank.length-TANK_MAX} soul${e.tank.length-TANK_MAX>1?'s':''} first (or press K): the gate only cashes in ${TANK_MAX}. Then press Leave Dimension.`,c:'bad'};render()}else leaveDimension();break}
@@ -1950,6 +1973,7 @@ document.addEventListener('keydown',e=>{
  const k=e.key.toLowerCase();const scr=UI.screen;const click=sel=>{const b=document.querySelector(sel);if(b&&!b.disabled){e.preventDefault();b.click()}};
  if(scr==='intro'&&k==='enter')return click('[data-act="newgame"]');
  if(!S)return;
+ if(UI.baitInfo){if(k==='escape'||k==='enter'){e.preventDefault();UI.baitInfo=null;render()}return}
  if(UI.lowTimeAsk){if(k==='escape'){e.preventDefault();click('.modal [data-act="lt_cancel"]')}return}
  if(!S.exp&&['1','2','3','4','5','6'].includes(k)){go(['temple','equip','lab','baits','system','map'][+k-1]);return}
  if(scr==='rules'&&k==='enter')return click('[data-act="begin"]');
