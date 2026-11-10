@@ -1511,6 +1511,12 @@ function keeperLine(fresh){const L=S.lastCash;
 /* the Temple opens up as the player hunts, so the first screen is just the Keeper and "Start here" */
 /* ---- bait card: what a bait is, and which souls count it as a favourite ---- */
 const GROUP_BLURB={Flesh:'Meat and scraps. Hunters and scavengers come for it.',Plant:'Leaves, roots and fruit. Grazers and gentle things come for it.',Mineral:'Stone, ore and gems. Things made of earth come for it.',Spirit:'Keepsakes and offerings. The restless dead come for it.',Arcane:'Charms and worked magic. Things born of spellcraft come for it.',Fungus:'Mushrooms and moulds. Things of rot and damp come for it.',Insect:'Bugs, grubs and their makings. Quick, small hunters come for it.',Brew:'Drinks, tonics and potions. Thirsty and curious things come for it.'};
+/* mending: bonus points restore a worn bait (under half durability) to full */
+const MEND_COST=[1,1,1,2,2,3,3];
+function canMend(b){return b&&b.dur<MAX_DUR[b.r]/2}
+function mendCost(b){return MEND_COST[b.r]||1}
+function mendBait(uid){const b=S.baits.find(x=>x.uid===uid);if(!b||!canMend(b)){sfx.error();return}const c=mendCost(b);if(S.bp<c){sfx.error();toast(`Mending ${esc(b.n)} costs ★ ${c} and you have ★ ${S.bp}.`);return}
+ S.bp-=c;b.dur=MAX_DUR[b.r];finishBait(b);sfx.coin();toast(`${esc(b.n)} is mended: ${durText(b)}.`);save();render()}
 function baitDesc(b){const q=b.q.map(i=>QUALS[i]).filter(Boolean).map(qualPhrase);const an=/^[AEIOU]/.test(SIZES[b.s])?'An':'A';
  return`${an} ${SIZES[b.s].toLowerCase()} ${b.g.toLowerCase()} bait${q.length?', '+(q.length>1?q.slice(0,-1).join(', ')+' and '+q[q.length-1]:q[0]):''}. ${GROUP_BLURB[b.g]||''}`}
 /* a favourite: the soul eats this group, wants this size, and likes at least one of the bait's qualities */
@@ -1520,7 +1526,7 @@ function baitModal(){const b=UI.baitInfo&&S.baits.find(x=>x.uid===UI.baitInfo);i
  return`<div class="modalback" data-act="baitclose"></div><div class="modal baitcard" role="dialog" aria-modal="true" aria-labelledby="bait-h">
   <div class="bchead">${p?`<span class="bicobig" style="--bx:${p[0]};--by:${p[1]}" aria-hidden="true"></span>`:''}<div><h2 id="bait-h" style="margin:0 0 6px">${esc(b.n)}</h2>
    <div class="bctags"><span class="chip r-${b.r}">${RARITY[b.r]}</span><span class="chip">${gIco(b.g)}${b.g}</span><span class="chip">${SIZES[b.s]}</span>${qchips(b)}</div></div></div>
-  <p style="margin:12px 0 6px">${esc(baitDesc(b))}</p><p class="muted" style="font-size:13px;margin:0 0 12px">Durability ${durText(b)}</p>
+  <p style="margin:12px 0 6px">${esc(baitDesc(b))}</p><p class="muted" style="font-size:13px;margin:0 0 12px">Durability ${durText(b)}${canMend(b)?` · <button class="btn small" data-act="mend" data-uid="${b.uid}" ${S.bp<mendCost(b)?'disabled':''}>Mend for ★ ${mendCost(b)}</button>${S.bp<mendCost(b)?` <span>(you have ★ ${S.bp})</span>`:''}`:''}</p>
   <h3 style="margin:0 0 6px">Favorite of souls:</h3>
   ${F.known.length||F.hidden.length?`<ul class="bcfav">${F.known.map(sp=>`<li><canvas width="32" height="32" data-sprite="${sp.id}" style="width:32px;height:32px;image-rendering:pixelated"></canvas><b>${esc(sp.name)}</b></li>`).join('')}${F.hidden.map(()=>`<li class="unk"><span class="q" aria-hidden="true">?</span>??????</li>`).join('')}</ul><p class="muted" style="font-size:12px;margin:8px 0 0">${F.hidden.length?'Catch a soul with this bait to reveal a ??????.':'Every soul that favours this bait is known.'}</p>`:'<p class="muted" style="margin:0">No soul counts this exact bait as a favourite.</p>'}
   <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary" id="bait-close" data-act="baitclose">Close <kbd>Esc</kbd></button></div></div>`}
@@ -1558,7 +1564,8 @@ function vTemple(){if(UI.tab.temple==='equip'||UI.tab.temple==='bookmarks'||(UI.
   <p class="muted" style="font-size:12px;margin-top:10px">${C.live?'<span class="netdot on"></span>These caches are shared by every hunter. Whoever opens the Legendary resets them for everyone.':'Other hunters open a few caches each day too.'}</p>`}
  else if(t==='bonus'){const opts=[['conjure',4,'Conjure baits','Generate 3 random baits, Uncommon or better, with a small chance of Special or Legendary.'],['ironline',3,'Iron Line','Your next hunt causes no bait durability damage.'],['goldtide',3+Math.floor(ownedN()/3),'Golden Tide','Double the money from your next hunt. Costs more as you unlock regions.'],['warcry',2,'War Cry','+10 fight bonus for your next hunt.']];
   body=`<h2>Bonus points <span class="muted" style="font-size:16px">· you have ★ ${S.bp}</span></h2><p>Earn bonus points by cashing in a species' first Legendary (+1) or first Perfect (+5; later Perfects +1), finishing Gold Rush and Guild urgent quests, placing in tournaments, Arenas and the Ledger, and rising in Hunter Rank.</p>
-  <div class="grid2">${opts.map(([k,c,n,d])=>`<div class="box"><h3>${n} <span class="muted">· ★ ${c}</span></h3><p style="font-size:14px">${d}</p>${S.buffs[k]?'<span class="chip" style="color:var(--gold)">Ready for next hunt</span>':`<button class="btn" data-act="bonus" data-k="${k}" data-c="${c}" ${S.bp<c?'disabled':''}>Use ★ ${c}</button>`}</div>`).join('')}</div>`}
+  <div class="grid2">${opts.map(([k,c,n,d])=>`<div class="box"><h3>${n} <span class="muted">· ★ ${c}</span></h3><p style="font-size:14px">${d}</p>${S.buffs[k]?'<span class="chip" style="color:var(--gold)">Ready for next hunt</span>':`<button class="btn" data-act="bonus" data-k="${k}" data-c="${c}" ${S.bp<c?'disabled':''}>Use ★ ${c}</button>`}</div>`).join('')}
+   ${(()=>{const W=S.baits.filter(canMend).sort((a,b)=>a.dur/MAX_DUR[a.r]-b.dur/MAX_DUR[b.r]);return`<div class="box"><h3>Mend a bait <span class="muted">· ★ 1–3</span></h3><p style="font-size:14px">Restore a worn bait to full durability before it breaks. Any bait under half durability can be mended: ★ 1 for Common to Unique, ★ 2 for Rare and Very Rare, ★ 3 for Special and Legendary.</p>${W.length?`<div class="row" style="gap:8px;flex-wrap:wrap"><select id="mendsel" style="flex:1 1 200px;min-width:0">${W.map(b=>`<option value="${b.uid}">${esc(b.n)} · ${RARITY[b.r]} · ${durText(b)} · ★ ${mendCost(b)}</option>`).join('')}</select><button class="btn" data-act="mend" ${S.bp<Math.min(...W.map(mendCost))?'disabled':''}>Mend</button></div>`:'<p class="muted" style="font-size:13px;margin:0">None of your baits are under half durability.</p>'}</div>`})()}</div>`}
  return`<div class="row" style="justify-content:space-between;margin-bottom:12px"><h1>The Temple</h1><span class="muted">${templeOpen().home?`${RANKS[(S.league&&S.league.rank)||0]} · Day ${S.day} · ${S.stats.caught} soul${S.stats.caught===1?'':'s'} caught`:`Day ${S.day}`}</span></div>`+(templeOpen().home?tabs('temple',[['overview','Overview'],['guild',"Hunters' Guild"],...(S.cacheUnlocked?[['caches',`Caches${S.cacheKeys?` \u00b7 ${S.cacheKeys} key${S.cacheKeys>1?'s':''}`:''}`]]:[]),['bonus','Bonus Points']]):'')+body}
 
 function vEquip(){return`<div class="row" style="justify-content:space-between;margin-bottom:12px"><h1>Equipment Investment</h1><span class="muted">Balance ${money(S.money)}</span></div>`+`<div class="grid2"><div class="stack"><div class="box"><h3>Elemental specialization</h3><p class="muted" style="font-size:14px">Each level adds +5 fight bonus against souls of that element and makes them more likely to take your bait. Every skill also adds +0.8 to all fights, so nothing is wasted.</p>
@@ -1943,6 +1950,7 @@ function act(a,d,el){
  case'netcancel':netCancel(+d.lid);break;
  case'netretry':NET.at={};if(!NET.id)netInit();else netBeat();netMarket(true);break;
  case'recwin':UI.recAll=!!d.all;render();break;
+ case'mend':mendBait(d.uid?+d.uid:+(($('#mendsel')||{}).value));break;
  case'baitinfo':UI.baitInfo=+d.uid;render();setTimeout(()=>{const c=$('#bait-close');if(c)c.focus()},30);break;
  case'baitclose':UI.baitInfo=null;render();break;
  case'lt_cancel':UI.lowTimeAsk=null;render();break;
