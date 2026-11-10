@@ -1667,12 +1667,23 @@ function vLab(){if(!['buy','market','synth'].includes(UI.tab.lab))UI.tab.lab='bu
   ${S.baits.length?S.baits.map(b=>`<tr><td>${bIco(b)}${esc(b.n)}</td><td>${gIco(b.g)}${b.g}</td><td>${SIZES[b.s]}</td><td><span class="r-${b.r}">${RARITY[b.r]}</span></td><td style="font-size:12px">${qchips(b)}</td><td class="num">${durText(b)}</td></tr>`).join(''):'<tr><td colspan="6">No baits. Buy some before you hunt.</td></tr>'}</tbody></table></div>`}
  return`<h1 style="margin-bottom:12px">Laboratory</h1>`+tabs('lab',[['buy','Buy Common Baits'],['market','P2P Market'],['synth','Synthesis']])+body}
 
+/* auto-plan: bookmark the baits you own that best fit what YOU know about a soul (what it has bitten on, and field notes) */
+function planScore(sid,b){const sp=SPECIES[sid];const L=(S.likes&&S.likes[sid])||{types:[],sizes:[],quals:[]};const N=(S.notes&&S.notes[sid])||{g:[],size:false,q:[]};let sc=0;
+ if((N.g||[]).includes(b.g))sc+=3;else if((L.types||[]).includes(b.g))sc+=2;else return 0; // the group has to be one you know it takes
+ if(N.size)sc+=[3,1.5,0,-1,-2][Math.abs(sp.bs-b.s)];else if((L.sizes||[]).includes(SIZES[b.s]))sc+=1.5;
+ const kq=new Set([...(L.quals||[]),...(N.q||[])]);sc+=2*b.q.filter(q=>kq.has(q)).length;return sc}
+function planKnown(sid){const L=S.likes&&S.likes[sid],N=S.notes&&S.notes[sid];return!!((L&&L.types&&L.types.length)||(N&&N.g&&N.g.length))}
+function autoPlan(sid){const sp=SPECIES[sid];const nm=S.bestiary[sid]||S.seen[sid]?sp.name:'this soul';if(!planKnown(sid)){sfx.error();toast(`You don't know what ${esc(nm)} eats yet. Catch one, or watch the field feed where it lives.`);return}
+ const ranked=S.baits.map(b=>({b,sc:planScore(sid,b)})).filter(x=>x.sc>0).sort((x,y)=>y.sc-x.sc||y.b.r-x.b.r||y.b.dur-x.b.dur).slice(0,BAG_MAX);
+ if(!ranked.length){sfx.error();toast(`None of your baits fit what you know about ${esc(nm)}. It takes ${esc(likesText(sid)||notesText(sid))}.`);return}
+ S.bookmarks=ranked.map(x=>x.b.uid);UI.planFor=sid;sfx.coin();save();render();
+ toast(`Bookmarked ${ranked.length} bait${ranked.length===1?'':'s'} for ${esc(nm)}: ${ranked.slice(0,3).map(x=>esc(x.b.n)).join(', ')}${ranked.length>3?` and ${ranked.length-3} more`:''}. Your earlier bookmarks were replaced.`)}
 function bestInfoRow(sp,b){const fk=(S.found&&S.found[sp.id])||[];
  const all=[];REGIONS.forEach((R,ri)=>R.areas.forEach((A,ai)=>{if(A.sp[sp.id])all.push(areaKey(ri,ai))}));
  const where=all.map(k=>{if(!fk.includes(k))return`<li style="opacity:.6;font-family:var(--f-data)">????</li>`;const[r,a]=k.split('-').map(Number);return`<li><b>${REGIONS[r].areas[a].n}</b> <span style="opacity:.7">· ${REGIONS[r].name}</span></li>`}).sort((x,y)=>x.includes('????')-y.includes('????')).join('');
  return`<tr><td></td><td colspan="7" style="padding:10px 10px 14px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
  <div><b style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Where it spawns</b><ul style="margin:4px 0 0;padding-left:18px">${where}</ul><p style="font-size:12px;opacity:.75;margin:4px 0 0">${fk.length>=all.length?'All locations found.':'Hook one in a new area to reveal a ????.'}</p></div>
- <div><b style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Likes</b><p style="margin:4px 0 0">${likesText(sp.id)||'Unknown'}</p></div>
+ <div><b style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Likes</b><p style="margin:4px 0 0">${likesText(sp.id)||'Unknown'}</p>${notesText(sp.id)?`<p style="margin:4px 0 0;font-size:12px;opacity:.8">Field notes: ${notesText(sp.id)}</p>`:''}<button class="btn small" style="margin-top:8px" data-act="autoplan" data-sid="${sp.id}" ${planKnown(sp.id)&&S.baits.length?'':'disabled'} title="Bookmark the baits you own that best fit what you know about this soul">Auto-plan baits</button>${UI.planFor===sp.id?` <button class="btn small" data-act="go" data-to="baits">See them in Baits</button>`:''}</div>
  ${b?`<div><b style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Genes carried</b><p style="margin:4px 0 0;font-family:var(--f-data)">${sp.genes.split('').join(' ')}</p></div>`:''}</div></td></tr>`}
 function vSystem(){const t=UI.tab.system;let body='';
  if(t==='bestiary'){const all=Object.values(SPECIES);if(UI.bestHide==null)UI.bestHide=Object.keys(S.bestiary).length>0;
@@ -1945,6 +1956,7 @@ function act(a,d,el){
  case'ssort':{const so=UI.shopSort;UI.shopSort=so&&so.k===d.k?{k:d.k,dir:-so.dir}:{k:d.k,dir:1};render();break}
  case'opencache':openCache(+d.i);break;
  case'tocache':{S.cacheNotice=null;UI.tab.temple='caches';UI.cacheMsg=null;const L=S.lastCash;if(L&&L.grHit&&!L.grClaimed)return;UI.screen='temple';render();window.scrollTo(0,0);break}
+ case'autoplan':autoPlan(d.sid);break;
  case'bmclear':S.bookmarks=[];toast('All bookmarks cleared.');save();render();break;
  case'mrefresh':{const rc=refreshCost();if((S.mRefreshes||0)>=1){toast('You have already refreshed today. New listings arrive at midnight.');return}if(S.money<rc){sfx.error();return}S.money-=rc;S.mRefreshes=(S.mRefreshes||0)+1;fillMarket();sfx.coin();toast(`New listings are up (${money(rc)}). You can refresh again tomorrow.`);save();render();break}
  case'autosetup':UI.autoSetup=!UI.autoSetup;render();break;
