@@ -390,8 +390,8 @@ button.cache:not(:disabled):hover .chest{transform:translateY(-2px)}
  .fstage .portrait .ground{width:132px;height:33px}
  .fmini{display:grid;grid-template-columns:auto minmax(0,1fr);gap:1px 8px;margin:0;font-size:12px;line-height:1.35;align-self:start}
  .fmini dt{color:var(--ink-2);white-space:nowrap}.fmini dd{margin:0;overflow-wrap:anywhere}
- .fmini dt:first-child{color:var(--soul);font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:11px;white-space:normal}
- .fmini dd:nth-of-type(1){font-weight:700}
+ .fmini dt.fname{grid-column:1/-1;color:var(--soul);font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:11px;white-space:normal}.fmini .ftier{text-transform:none;letter-spacing:0;white-space:nowrap;font-size:12px}
+ 
  .fmini .muted{font-size:11px}
  .fmini [class^="t-"]::before{content:none!important}
  .fightmsg:empty{display:none}
@@ -859,7 +859,7 @@ async function netRecords(force){if(!force&&NET.at.rec>Date.now()-30e3)return;NE
 /* catches cashed in at the gate go up in one batch; queued if offline */
 function netQueueCatches(rows){S.netQ=(S.netQ||[]).concat(rows).slice(-24);save();netFlush()}
 async function netFlush(){if(!NET.id||!(S.netQ||[]).length||NET.flushing)return;NET.flushing=true;
- try{const batch=S.netQ.slice(0,12);await rpc('sg_submit_catches',{...me(),p_rows:batch});S.netQ=S.netQ.slice(batch.length);save();NET.at.rec=0;NET.at.tourn=0;if(UI.screen==='temple'||UI.screen==='cashin')netTourn(true)}catch(_){}finally{NET.flushing=false}}
+ try{const batch=S.netQ.slice(0,12);await rpc('sg_submit_catches',{...me(),p_rows:batch});S.netQ=S.netQ.slice(batch.length);save();NET.at.rec=0;NET.at.tourn=0;if(UI.screen==='temple'||UI.screen==='cashin')netTourn(true)}catch(e){if(/look right|Too many|too many catches/i.test(e.message||'')){S.netQ=S.netQ.slice(Math.min(12,S.netQ.length));save();news('The Temple could not record some of your catches on the worldwide boards. Your pay was not affected.')}}finally{NET.flushing=false}}
 async function netBuy(lid){const l=(NET.market||[]).find(x=>x.id===lid);if(!l)return;
  if(S.money<l.price){sfx.error();toast.bad('Not enough money for that listing.');return}
  try{const r=await rpc('sg_buy_listing',{...me(),p_listing:lid});const nb=netBait(r.bait);if(!nb)throw new Error('That bait could not be read.');
@@ -1787,7 +1787,7 @@ function vFight(){const e=S.exp,f=e.fight;const sp=SPECIES[f.sid];const bait=S.b
   <div class="box"><h3>Your pull</h3><dl class="dl">${fp.parts.map(p=>`<dt>${p[0]}</dt><dd>+${p[1]}</dd>`).join('')}<dt><b>Total</b></dt><dd><b>${fp.total}</b></dd></dl>
    <p class="muted" style="font-size:12px;margin-top:10px">Each pull also strips a share of the soul's HP that grows with your training. Raise the bonus in Equipment.</p></div>
   <div class="stack"><div class="fstage"><div class="portrait"><canvas id="portrait" width="256" height="256"></canvas><canvas class="ground" width="320" height="80" data-ground="${e.region}-${f.area}"></canvas></div>
-   <dl class="fmini"><dt>${esc(sp.name)}</dt><dd class="${tierClass(f.tier)}"><img class="tbadge" src="ui/icons/badge_${tierBadge(f.tier)}.png" alt="">${TIERS[f.tier]}</dd>
+   <dl class="fmini"><dt class="fname">${esc(sp.name)} <span class="ftier ${tierClass(f.tier)}"><img class="tbadge" src="ui/icons/badge_${tierBadge(f.tier)}.png" alt="">${TIERS[f.tier]}</span></dt>
     <dt>Level</dt><dd>${f.lvl} · ${elIcon(sp.el)} <span style="color:${EL[sp.el].c[1]}">${EL[sp.el].name}</span></dd>
     <dt>Endurance</dt><dd>${f.end}</dd><dt>Your pull</dt><dd><b>${fp.total}</b> <span class="muted">(${fp.parts.filter(p=>p[1]).map(p=>p[0].replace(' skill','')+' '+p[1]).join(' + ')||'base'})</span></dd>
     <dt>Likes</dt><dd>${likesText(f.sid)||'—'}</dd><dt>Bait</dt><dd>${bait?esc(B(bait).n)+' '+durText(bait):'—'}</dd></dl></div>
