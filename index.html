@@ -513,6 +513,7 @@ REGIONS.forEach((R,ri)=>R.cost=REGION_COST[ri]);
 function regionPrev(ri){const k=REGION_ORDER.indexOf(ri);return k>0?REGION_ORDER[k-1]:null}
 /* ---- pacing: a region's own souls, the gate to the next region, depth, and a twist per band of six regions ---- */
 const REGION_SIDS=REGIONS.map(R=>[...new Set(R.areas.flatMap(A=>Object.keys(A.sp)))]);
+const SPECIES_UNLOCK=(()=>{const seen=new Set(),out=[];REGION_ORDER.forEach(ri=>REGION_SIDS[ri].forEach(x=>{if(!seen.has(x)&&SPECIES[x]){seen.add(x);out.push(SPECIES[x])}}));Object.values(SPECIES).forEach(sp=>{if(!seen.has(sp.id))out.push(sp)});return out})();
 const GATE_KINDS=5; // kinds of soul you must have caught in a region before the next one opens
 function regionFound(ri){return REGION_SIDS[ri].filter(x=>S.bestiary[x]&&S.bestiary[x].n>0).length}
 function regionGate(ri){const prev=regionPrev(ri);if(prev==null)return{ok:true,need:0,have:0,prev:null};const need=Math.min(GATE_KINDS,REGION_SIDS[prev].length),have=regionFound(prev);return{ok:have>=need,need,have,prev}}
@@ -534,7 +535,7 @@ function pullShare(depth,T){return(FIGHT.base-.05*depth)+(SKILL_SCALE+.05*depth)
 function regionMatch(ri){const d=regionDepth(ri);const els=[...new Set(REGION_SIDS[ri].map(x=>SPECIES[x].el))];const br=Math.max(0,...carried().map(b=>b.r));const r=els.reduce((a,el)=>a+pullShare(d,trainingOf(el,br)),0)/els.length/.12;
  return r>=.85?{k:'ok',t:'A fair match for you'}:r>=.68?{k:'hard',t:'Tough for your training'}:{k:'bad',t:'Far beyond your training'}}
 function matchChip(ri){const m=regionMatch(ri);return`<span class="chip match-${m.k}" title="Skills, element mastery and bait rarity all count. Deeper regions need more of each.">${m.t}</span>`}
-function regionDoneCheck(quiet){S.regionDone=S.regionDone||{};REGIONS.forEach((R,ri)=>{if(S.regionDone[ri]||regionFound(ri)<REGION_SIDS[ri].length)return;S.regionDone[ri]=1;const pay=Math.max(300,Math.round(R.cost*.25/10)*10);S.money+=pay;S.bp+=2;news(`You have caught every kind of soul in ${R.name}. The Temple pays a completion bounty of ${money(pay)} and 2 bonus points.`);if(!quiet){toast(`${esc(R.name)} complete: ${money(pay)} + ★ 2`,'gold');try{sfx.coin()}catch(_){}}})}
+function regionDoneCheck(quiet){S.regionDone=S.regionDone||{};REGION_ORDER.forEach(ri=>{const R=REGIONS[ri];if(S.regionDone[ri]||regionFound(ri)<REGION_SIDS[ri].length)return;S.regionDone[ri]=1;const pay=Math.max(300,Math.round(R.cost*.25/10)*10);S.money+=pay;news(`You have caught every kind of soul in ${R.name}. The Temple pays a completion bounty of ${money(pay)}.`);if(!quiet){toast(`${esc(R.name)} complete: bounty ${money(pay)}`,'gold');try{sfx.coin()}catch(_){}}})}
 const NPCS=['Kerrow','ash_moth','NightHowl','vexa','Dorrin77','MossyBoots','gold_tooth','Hallow','Brannigan','zephyrine','old_kettle','RuneBucket','spearwife','Selka','toadstool9'];
 const DANGER=[{n:'Green',odds:200,c:'var(--safe)'},{n:'Blue',odds:100,c:'var(--warn)'},{n:'Purple',odds:8,c:'#b07cff'},{n:'Red',odds:2,c:'var(--crit)'}]; // 1-in-N chance a pull snaps the line
 const EXP_MINUTES=240, MOVE_MIN=12;let TANK_MAX=5;const SLOT_COST=[250000,1000000,4000000];
@@ -732,8 +733,8 @@ function recordLike(sid,bait){if(!bait)return;const d=bait;const sp=SPECIES[sid]
 function recordFound(sid,ri,ai){S.found=S.found||{};const L=S.found[sid]||(S.found[sid]=[]);const k=areaKey(ri,ai);if(!L.includes(k)){L.push(k);if(S.exp)logx(`Recorded: ${SPECIES[sid].name} lives in ${REGIONS[ri].areas[ai].n}.`,true)}}
 function areaByName(n){for(let ri=0;ri<REGIONS.length;ri++){const ai=REGIONS[ri].areas.findIndex(A=>A.n===n);if(ai>=0)return[ri,ai]}return null}
 function likesText(sid){const L=S.likes&&S.likes[sid];if(!L)return'';const q=(L.quals||[]).map(i=>QUALS[i].n);return[L.types.join(', '),L.sizes.join(', '),q.join(', ')].filter(Boolean).join(' · ')}
-function unlockedSpecies(){const set=new Set();REGIONS.forEach((R,ri)=>{if(!S.regions[ri])return;R.areas.forEach((A,ai)=>{if(S.areas[areaKey(ri,ai)])Object.keys(A.sp).forEach(s=>set.add(s))})});return[...set]}
-function regionSpecies(){const set=new Set();REGIONS.forEach((R,ri)=>{if(S.regions[ri])R.areas.forEach(A=>Object.keys(A.sp).forEach(s=>set.add(s)))});return[...set]}
+function unlockedSpecies(){const set=new Set();REGION_ORDER.forEach(ri=>{const R=REGIONS[ri];if(!S.regions[ri])return;R.areas.forEach((A,ai)=>{if(S.areas[areaKey(ri,ai)])Object.keys(A.sp).forEach(s=>set.add(s))})});return[...set]}
+function regionSpecies(){const set=new Set();REGION_ORDER.forEach(ri=>{const R=REGIONS[ri];if(S.regions[ri])R.areas.forEach(A=>Object.keys(A.sp).forEach(s=>set.add(s)))});return[...set]}
 const CACHE_MIX=[1,1,1,1,1,2,2,2,3,3,4,4,5,5,6]; // 5 Uncommon, 3 Unique, 2 Rare, 2 Very Rare, 2 Special, 1 Legendary
 const CACHE_COLORS=['#e8505b','#f59e3b','#f2c94c','#9bd65a','#3fbf7f','#36c6c0','#3b9bea','#5b6ef5','#9a63f0','#d063e0','#ef6fa8','#b07a4f','#8e9aa8','#e9e1c9','#3d4a63'];
 function newCache(){const rs=CACHE_MIX.slice().sort(()=>Math.random()-.5);const cs=CACHE_COLORS.slice().sort(()=>Math.random()-.5);
@@ -1549,7 +1550,7 @@ function baitDesc(b){const q=b.q.map(i=>QUALS[i]).filter(Boolean).map(qualPhrase
  return`${an} ${SIZES[b.s].toLowerCase()} ${b.g.toLowerCase()} bait${q.length?', '+(q.length>1?q.slice(0,-1).join(', ')+' and '+q[q.length-1]:q[0]):''}. ${GROUP_BLURB[b.g]||''}`}
 /* a favourite: the soul eats this group, wants this size, and likes at least one of the bait's qualities */
 function baitFavourites(b){const known=[],hidden=[];const got=(S.baitCaught&&S.baitCaught[b.base])||{};
- Object.values(SPECIES).forEach(sp=>{if(sp.diet[b.g]&&sp.bs===b.s&&b.q.some(q=>sp.likes.includes(q)))(got[sp.id]?known:hidden).push(sp)});return{known,hidden}}
+ SPECIES_UNLOCK.forEach(sp=>{if(sp.diet[b.g]&&sp.bs===b.s&&b.q.some(q=>sp.likes.includes(q)))(got[sp.id]?known:hidden).push(sp)});return{known,hidden}}
 function baitModal(){const b=UI.baitInfo&&S.baits.find(x=>x.uid===UI.baitInfo);if(!b){UI.baitInfo=null;return''}const F=baitFavourites(b);const p=BAIT_ICO[b.base];
  return`<div class="modalback" data-act="baitclose"></div><div class="modal baitcard" role="dialog" aria-modal="true" aria-labelledby="bait-h">
   <div class="bchead">${p?`<span class="bicobig" style="--bx:${p[0]};--by:${p[1]}" aria-hidden="true"></span>`:''}<div><h2 id="bait-h" style="margin:0 0 6px">${esc(b.n)}</h2>
@@ -1679,18 +1680,18 @@ function autoPlan(sid){const sp=SPECIES[sid];const nm=S.bestiary[sid]||S.seen[si
  S.bookmarks=ranked.map(x=>x.b.uid);UI.planFor=sid;sfx.coin();save();render();
  toast(`Bookmarked ${ranked.length} bait${ranked.length===1?'':'s'} for ${esc(nm)}: ${ranked.slice(0,3).map(x=>esc(x.b.n)).join(', ')}${ranked.length>3?` and ${ranked.length-3} more`:''}. Your earlier bookmarks were replaced.`)}
 function bestInfoRow(sp,b){const fk=(S.found&&S.found[sp.id])||[];
- const all=[];REGIONS.forEach((R,ri)=>R.areas.forEach((A,ai)=>{if(A.sp[sp.id])all.push(areaKey(ri,ai))}));
+ const all=[];REGION_ORDER.forEach(ri=>REGIONS[ri].areas.forEach((A,ai)=>{if(A.sp[sp.id])all.push(areaKey(ri,ai))}));
  const where=all.map(k=>{if(!fk.includes(k))return`<li style="opacity:.6;font-family:var(--f-data)">????</li>`;const[r,a]=k.split('-').map(Number);return`<li><b>${REGIONS[r].areas[a].n}</b> <span style="opacity:.7">· ${REGIONS[r].name}</span></li>`}).sort((x,y)=>x.includes('????')-y.includes('????')).join('');
  return`<tr><td></td><td colspan="7" style="padding:10px 10px 14px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
  <div><b style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Where it spawns</b><ul style="margin:4px 0 0;padding-left:18px">${where}</ul><p style="font-size:12px;opacity:.75;margin:4px 0 0">${fk.length>=all.length?'All locations found.':'Hook one in a new area to reveal a ????.'}</p></div>
  <div><b style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Likes</b><p style="margin:4px 0 0">${likesText(sp.id)||'Unknown'}</p>${notesText(sp.id)?`<p style="margin:4px 0 0;font-size:12px;opacity:.8">Field notes: ${notesText(sp.id)}</p>`:''}<button class="btn small" style="margin-top:8px" data-act="autoplan" data-sid="${sp.id}" ${planKnown(sp.id)&&S.baits.length?'':'disabled'} title="Bookmark the baits you own that best fit what you know about this soul">Auto-plan baits</button>${UI.planFor===sp.id?` <button class="btn small" data-act="go" data-to="baits">See them in Baits</button>`:''}</div>
  ${b?`<div><b style="font-size:12px;letter-spacing:.06em;text-transform:uppercase">Genes carried</b><p style="margin:4px 0 0;font-family:var(--f-data)">${sp.genes.split('').join(' ')}</p></div>`:''}</div></td></tr>`}
 function vSystem(){const t=UI.tab.system;let body='';
- if(t==='bestiary'){const all=Object.values(SPECIES);if(UI.bestHide==null)UI.bestHide=Object.keys(S.bestiary).length>0;
+ if(t==='bestiary'){const all=SPECIES_UNLOCK;if(UI.bestHide==null)UI.bestHide=Object.keys(S.bestiary).length>0;
   const sets=Object.keys(S.sets||{}).length,codex=Object.values(S.bestiary).filter(b=>Math.max(b.topTier||0,b.bestTier||0)>=10).length,legs=Object.values(S.bestiary).filter(b=>Math.max(b.topTier||0,b.bestTier||0)>=9).length;
   const cardsView=UI.bestView!=='table';
   const cardHtml=sp=>{const b=S.bestiary[sp.id];const seen=b||S.seen[sp.id];return`<button class="card ${b?'':seen?'unknown':'unseen'} ${b&&b.bestTier>=10?'perfect':b&&b.bestTier>=9?'legendary':''}" data-act="binfo" data-sid="${sp.id}" aria-label="${b?sp.name:'Unknown soul'}">${b||S.seen[sp.id]?`<canvas width="64" height="64" data-sprite="${sp.id}"></canvas>`:'<div class="qmark">?</div>'}<b>${b?sp.name:seen?'Glimpsed':'???'}</b>${guildWants(sp.id).length&&(b||seen)?'<span class="chip gtag" style="font-size:10px">Guild</span>':''}<span>${b?`${b.n} caught · best ${TIERS[b.bestTier]}`:seen&&notesText(sp.id)?'field notes':'&nbsp;'}</span></button>`};
-  const cards=REGION_ORDER.filter(ri=>S.regions[ri]||regionSpeciesOf(ri).some(x=>S.bestiary[x])).map(ri=>{const L=regionSpeciesOf(ri);const got=L.filter(x=>S.bestiary[x]).length;return`<div class="regset"><h3>${REGIONS[ri].name}</h3><span class="gv">${got}/${L.length}${S.sets&&S.sets[ri]?' · set complete ✓':' · complete the set for +2★ and a cache key'}</span></div><div class="cards">${L.map(x=>cardHtml(SPECIES[x])).join('')}</div>${L.includes(UI.bestInfo)?`<table class="lav" style="margin-top:8px;width:100%"><tbody>${bestInfoRow(SPECIES[UI.bestInfo],S.bestiary[UI.bestInfo])}</tbody></table>`:''}`}).join('');
+  const cards=REGION_ORDER.filter(ri=>S.regions[ri]||regionSpeciesOf(ri).some(x=>S.bestiary[x])).map(ri=>{const L=regionSpeciesOf(ri);const got=L.filter(x=>S.bestiary[x]).length;return`<div class="regset"><h3>${REGIONS[ri].name}</h3><span class="gv">${got}/${L.length}${S.sets&&S.sets[ri]?' · set complete ✓':' · complete the set for +2★, a cache key and a cash bounty'}</span></div><div class="cards">${L.map(x=>cardHtml(SPECIES[x])).join('')}</div>${L.includes(UI.bestInfo)?`<table class="lav" style="margin-top:8px;width:100%"><tbody>${bestInfoRow(SPECIES[UI.bestInfo],S.bestiary[UI.bestInfo])}</tbody></table>`:''}`}).join('');
   body=`<h2>Bestiary · ${Object.keys(S.bestiary).length} of ${all.length} captured</h2>
   <p class="muted" style="margin-top:-4px">Region sets complete: <b>${sets}</b>/${REGIONS.length} · Legendary or better: <b>${legs}</b> · Perfect Codex: <b>${codex}</b>/${all.length} <span style="font-size:13px">(every 5 pays +3★ and a cache key)</span></p>
   <div class="bview"><button class="btn small ${cardsView?'primary':''}" data-act="bview" data-v="cards">Cards by region</button><button class="btn small ${cardsView?'':'primary'}" data-act="bview" data-v="table">Searchable table</button></div>
