@@ -1113,7 +1113,9 @@ function startExpedition(ri){
  S.exp={region:ri,area:0,clock:EXP_MINUTES-(twistOf(ri)&&twistOf(ri).id==='thin'?40:0),tank:[],log:[],buffs:S.buffs||{},trap:null,fight:null,alert:null,bag:bagPick()};S.buffs={};S.stats.trips++;
  logx(`You step through ${REGIONS[ri].areas[0].n}. ${fmtMins(S.exp.clock)} until your body gives out.`,true);if(twistOf(ri))logx(`${twistOf(ri).n}: ${twistOf(ri).d}`,true);
  UI.screen='hunt';UI.msg=null;UI.watchSpeed=1;save();render();}
-function maxTrap(){const e=S.exp;return e?Math.max(1,Math.min(10,e.clock-1)):10}
+const TRAP_MAX=30,SOAK_CAP=10,TRAP_STEPS=[1,2,3,4,5,6,7,8,9,10,15,20,30];
+function maxTrap(){const e=S.exp;return e?Math.max(1,Math.min(TRAP_MAX,e.clock-1)):TRAP_MAX}
+function trapSteps(){const mx=maxTrap();const L=TRAP_STEPS.filter(x=>x<=mx);if(!L.includes(mx))L.push(mx);return L}
 function logx(t,hi){S.exp.log.unshift({t,hi});S.exp.log=S.exp.log.slice(0,30)}
 /* ---- body clock: how long the walk back to the gate takes, and how much time is spare after it ---- */
 function fmtMins(m){m=Math.max(0,Math.round(m));return m<60?m+' min':fmtClock(m)}
@@ -1232,7 +1234,7 @@ function tick(){ // one whole trap minute (used by tests and catch-up)
 function quickChaff(f){if(!S.autoChaff||UI.auto&&UI.auto.running||f.tier>4||!(S.bestiary[f.sid]&&S.bestiary[f.sid].n>=10))return false;const e=S.exp;UI.screen='fight';UI.quick=true;let n=0;try{while(e.fight===f&&S.exp&&!UI.heaving&&n++<200){const k=f.danger>=2&&f.hp>0?'push':f.hidden?'wait':(f.stance==='braced'&&f.danger<=1?'wait':'pull');fightAction(k)}}finally{UI.quick=false}
  if(UI.heaving){UI.heaving=false;if(S.exp&&S.exp.fight===f)captured()}if(UI.screen==='fight'&&(!S.exp||!S.exp.fight))UI.screen='hunt';if(UI.screen==='caught')UI.caught.quick=n;render();return true}
 function engage(){const e=S.exp;if(!e.alert)return;const bait=S.baits.find(b=>b.uid===e.trap.baitUid);
- const ec=e.alert.echo;e.soak=e.trap.mins<=3?0:e.trap.mins-e.trap.left;e.fight=readyFight(spawnMonster(e.alert.sid,bait,ec?ec.tier:0));if(ec){e.echoes=e.echoes.filter(x=>x!==ec);e.fight.fromEcho=true}try{e.fight.star=bestBaitsHere(carried()).has(bait.uid)}catch(_){}if(!REGIONS[e.region].areas[e.area].sp[e.fight.sid]&&migrants(e.region).includes(e.fight.sid)){const F_=e.fight;F_.migrant=true;F_.value=Math.round(F_.value*.6*100)/100;F_.end=Math.max(5,F_.end-10)}e.alert=null;e.trap=null;
+ const ec=e.alert.echo;e.soak=e.trap.mins<=3?0:Math.min(SOAK_CAP,e.trap.mins-e.trap.left);e.fight=readyFight(spawnMonster(e.alert.sid,bait,ec?ec.tier:0));if(ec){e.echoes=e.echoes.filter(x=>x!==ec);e.fight.fromEcho=true}try{e.fight.star=bestBaitsHere(carried()).has(bait.uid)}catch(_){}if(!REGIONS[e.region].areas[e.area].sp[e.fight.sid]&&migrants(e.region).includes(e.fight.sid)){const F_=e.fight;F_.migrant=true;F_.value=Math.round(F_.value*.6*100)/100;F_.end=Math.max(5,F_.end-10)}e.alert=null;e.trap=null;
  if(quickChaff(e.fight))return;UI.fmsg={t:`${an(SPECIES[e.fight.sid].name).replace(/^a/,'A')} is caught in your trap. It looks ${TEMPER[e.fight.temper].n.toLowerCase()}. Watch its stance: pull when it's loose.`,c:''};UI.screen='fight';save();render();}
 const SYNTH_BAITS=4;
 function catchWear(t){const soak=S.exp&&S.exp.soak?Math.floor(S.exp.soak/4):0;return (t<=2?4:6+2*t+(t>=8?Math.floor(ownedN()/4):0))+soak} // a landed catch wears the bait more the stronger the monster: Weakling I 6 ... Legendary 24, Perfect 26
@@ -1512,7 +1514,7 @@ function drawFight(t,caught){const cv=$('#portrait');if(!cv)return;const m=caugh
 const fmtClock=m=>`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
 
 /* ================= RENDER ================= */
-function render(){if(UI.quick)return;rescueCheck();renderTop();netFoot();const scr=UI.screen;const m=$('#main');
+function render(){if(UI.quick)return;rescueCheck();renderTop();netFoot();const scr=UI.screen;const m=$('#main');const cameFrom=UI._scr;UI._scr=scr;if(scr==='hunt'&&cameFrom&&cameFrom!=='hunt')setTimeout(()=>{const tb=$('#trapbar');if(!tb)return;const r=tb.getBoundingClientRect();if(r.top<0||r.bottom>innerHeight)window.scrollTo(0,Math.max(0,window.scrollY+r.top-Math.max(8,(innerHeight-r.height)/3)))},0);
  const map={auto:vAuto,intro:vIntro,temple:vTemple,equip:vEquip,lab:vLab,system:vSystem,map:vMap,baits:vBaits,rules:vRules,hunt:vHunt,watch:vWatch,fight:vFight,caught:vCaught,cashin:vCashin};
  document.body.dataset.scr=scr;m.innerHTML=(map[scr]||vTemple)()+(S&&!['fight','watch'].includes(scr)?authChoiceModal():'');if(UI.lastScr!==scr){m.classList.remove('enter');void m.offsetWidth;m.classList.add('enter');UI.lastScr=scr}after(scr);}
 function renderTop(){
@@ -1774,14 +1776,8 @@ function vHunt(){const e=S.exp;const R=REGIONS[e.region];const A=R.areas[e.area]
  return`${lowTimeModal(e)}${UI.msg?`<div class="msg ${UI.msg.c||''}" style="margin-bottom:14px">${UI.msg.t}</div>`:''}
  ${S.stats.caught<3?`<div class="coach"><b>Picking bait.</b> Every soul eats one main kind of food and wants bait of one size. Gold lines in the field feed give it away ("tears into the flesh of a large creature" means Flesh, Large). Baits marked ★ suit what you've learned lives here. The right bait gets bites many times faster.</div>`:''}
  <p class="muted" style="font-size:13px;margin:-4px 0 10px">${worldLine(e)}${isHot(e)?' · <b style="color:var(--gold)">You are in today\'s hotspot: more bites, rarer tiers.</b>':''}</p>
- <div class="areaview"><div><canvas class="pix" width="320" height="180" data-area="${e.region}-${e.area}"></canvas></div>
- <div class="stack"><div><p class="eyebrow">${esc(R.name)} · Area ${e.area+1}</p><h1>${A.n}</h1></div><p>${A.d}</p>
-  ${(e.echoes||[]).length?`<div class="msg" style="border-left-color:var(--gold);min-height:0">${e.echoes.map(x=>`<b>Lingering echo:</b> ${SPECIES[x.sid].name} at ${TIERS[x.tier]} or better in <b>${esc(REGIONS[x.region].areas[x.area].n)}</b>${x.area===e.area?' (here: your next trap hooks it)':''}`).join('<br>')}</div>`:''}<p class="muted" style="font-size:14px">Seen here: ${known.length?[...new Set(known)].join(', '):'nothing yet. Trap to find out.'}</p>
-  <div><h3>Field log</h3><div class="log">${e.log.slice(0,8).map(l=>`<div class="${l.hi===true?'hi':l.hi||''}">${esc(l.t)}</div>`).join('')}</div></div></div>
- <div class="stack"><h3>Move to</h3><div class="movelist">${R.areas.map((a,ai)=>ai===e.area?'':S.areas[areaKey(e.region,ai)]?`<button class="btn" data-act="move" data-ai="${ai}"><span>${a.n}${(e.echoes||[]).some(x=>x.area===ai)?' <span style="color:var(--gold)">· echo</span>':''}</span><span class="muted">${moveCost(e.area,ai)}m</span></button>`:`<button class="btn" disabled><span>${a.n}</span><span>Locked</span></button>`).join('')}</div>
-  ${cashoutBox(e)}</div></div>
- <div class="trapbar"><b style="font-family:var(--f-body);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Trapping</b>
-  <label for="trapmin" title="A trap starts quiet and draws more as its scent spreads. The longer it soaks before a bite, the rarer the catch and the more bait wear.">Time <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">(1–3 min: quick bites, no soak · 4+ min: starts quiet, then rarer catches)</span></label><select id="trapmin">${Array.from({length:maxTrap()},(_,i)=>`<option value="${i+1}" ${Math.min(UI.lastMins||10,maxTrap())===i+1?'selected':''}>${i+1} min</option>`).join('')}</select>
+ <div class="trapbar" id="trapbar"><b style="font-family:var(--f-body);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Trapping</b>
+  <label for="trapmin" title="A trap starts quiet and draws more as its scent spreads. The longer it soaks before a bite, the rarer the catch and the more bait wear.">Time <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">(1–3: quick bites, no soak · 4+: starts quiet, then rarer catches · past 10 the bonus stops growing, it just saves recasting)</span></label><select id="trapmin">${(L=>{const want=Math.min(UI.lastMins||10,maxTrap());const pick=L.filter(x=>x<=want).pop()||L[0];return L.map(x=>`<option value="${x}" ${pick===x?'selected':''}>${x} min</option>`).join('')})(trapSteps())}</select>
   <label for="trapbait">Bait</label><span id="trapico">${bIco(bag.find(b=>b.uid===sel))}</span><select id="trapbait" style="min-width:0;flex:1 1 260px">${(()=>{const best=bestBaitsHere(bag);return bag.map(b=>`<option value="${b.uid}" ${b.uid===sel?'selected':''}>${best.has(b.uid)?'★ ':''}${esc(baitLabel(b))}</option>`).join('')})()||'<option>No baits</option>'}</select>
   <button class="btn primary" data-act="trap" ${bag.length?'':'disabled'}>Trap <kbd>T</kbd></button><button class="btn" data-act="autosetup" ${bag.length?'':'disabled'} aria-expanded="${!!UI.autoSetup}">Auto-Mode <kbd>A</kbd></button></div>
  ${UI.autoSetup?(()=>{const pr=UI.autoPrefs||{sid:'any',minTier:5,release:false};const here=Object.keys(A.sp);const known=here.filter(x=>S.bestiary[x]||S.seen[x]);
@@ -1793,6 +1789,12 @@ function vHunt(){const e=S.exp;const R=REGIONS[e.region];const A=R.areas[e.area]
   <label style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink);flex:1 1 100%"><input type="checkbox" id="autokeep" ${pr.keep?'checked':''}> Stop before the bait can drop below ${AUTO_KEEP_DUR} durability</label><label for="autohand">Hand fights to me</label><select id="autohand">${(h=>[[-1,'Never'],[5,'Boss and up'],[8,'Epic and up'],[9,'Legendary and up'],[10,'Perfect and up']].map(([v,l])=>`<option value="${v}" ${h===v?'selected':''}>${l}</option>`).join(''))(typeof pr.handoff==='number'?pr.handoff:pr.handoff===false?-1:5)}</select>
   <button class="btn gold" data-act="autostart">Start</button>
   <span class="muted" style="font-size:12px;flex-basis:100%">Uses the bait and trap time above. Stops when it catches the target, the bait breaks, or only the walk back to the gate plus ${AUTO_MIN_CLOCK} minutes is left.${here.length>known.length?` ${here.length-known.length} soul${here.length-known.length>1?'s':''} here you haven't seen yet can't be picked.`:''}</span></div>`})():''}
+ <div class="areaview" style="margin-top:14px"><div><canvas class="pix" width="320" height="180" data-area="${e.region}-${e.area}"></canvas></div>
+ <div class="stack"><div><p class="eyebrow">${esc(R.name)} · Area ${e.area+1}</p><h1>${A.n}</h1></div><p>${A.d}</p>
+  ${(e.echoes||[]).length?`<div class="msg" style="border-left-color:var(--gold);min-height:0">${e.echoes.map(x=>`<b>Lingering echo:</b> ${SPECIES[x.sid].name} at ${TIERS[x.tier]} or better in <b>${esc(REGIONS[x.region].areas[x.area].n)}</b>${x.area===e.area?' (here: your next trap hooks it)':''}`).join('<br>')}</div>`:''}<p class="muted" style="font-size:14px">Seen here: ${known.length?[...new Set(known)].join(', '):'nothing yet. Trap to find out.'}</p>
+  <div><h3>Field log</h3><div class="log">${e.log.slice(0,8).map(l=>`<div class="${l.hi===true?'hi':l.hi||''}">${esc(l.t)}</div>`).join('')}</div></div></div>
+ <div class="stack"><h3>Move to</h3><div class="movelist">${R.areas.map((a,ai)=>ai===e.area?'':S.areas[areaKey(e.region,ai)]?`<button class="btn" data-act="move" data-ai="${ai}"><span>${a.n}${(e.echoes||[]).some(x=>x.area===ai)?' <span style="color:var(--gold)">· echo</span>':''}</span><span class="muted">${moveCost(e.area,ai)}m</span></button>`:`<button class="btn" disabled><span>${a.n}</span><span>Locked</span></button>`).join('')}</div>
+  ${cashoutBox(e)}</div></div>
  <h3 style="margin-top:18px">Soul Tank · ${e.tank.length}/${TANK_MAX}${e.tank.length>TANK_MAX?` <span style="color:var(--crit);font-size:14px">· ${e.tank.length-TANK_MAX} over. Release extras to leave.</span>`:''}</h3>${tankHtml()}`}
 
 
@@ -2038,12 +2040,13 @@ function act(a,d,el){
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;if(b.type==='checkbox'){return}ac();act(b.dataset.act,b.dataset,b)});
 document.addEventListener('input',e=>{if(e.target.id==='vol'){S.vol=+e.target.value;if(MASTER)MASTER.gain.value=S.vol;save()}if(e.target.id==='musicvol'){S.musicVol=+e.target.value;ac();save()}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)authPush(true).catch(()=>{})});
-document.addEventListener('change',e=>{const t=e.target;if(t.id==='restorefile'&&t.files&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const o=JSON.parse(fr.result);if(!o||o.soulgate!==1||!o.save||typeof o.save.name!=='string'||!Array.isArray(o.save.baits))throw new Error('bad');
+document.addEventListener('change',e=>{const t=e.target;if(t.matches&&t.matches('select')&&S&&S.exp)setTimeout(()=>{if(document.activeElement===t)t.blur()},0);if(t.id==='restorefile'&&t.files&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const o=JSON.parse(fr.result);if(!o||o.soulgate!==1||!o.save||typeof o.save.name!=='string'||!Array.isArray(o.save.baits))throw new Error('bad');
    UI.restore=o;const rc=$('#restoreconfirm');if(rc)rc.innerHTML=`<p class="msg bad" style="margin:8px 0">Replace this hunter with <b>${esc(o.save.name)}</b> (day ${+o.save.day||'?'})? Progress in this browser will be overwritten.</p><div class="row"><button class="btn danger" data-act="restore2">Replace with backup</button><button class="btn" data-act="restore0">Cancel</button></div>`}catch(_){toast('That file is not a Soulgate backup.')}};fr.readAsText(t.files[0]);t.value=''}if(t.id==='vol')sfx.coin();if(t.id==='trapbait'){UI.lastBait=+t.value;const ti=$('#trapico');if(ti)ti.innerHTML=bIco(S.baits.find(b=>b.uid===+t.value))}if(t.id==='trapmin')UI.lastMins=+t.value;
  if(['autotarget','autotier','autopush','autorelease'].includes(t.id)){const pr=UI.autoPrefs||(UI.autoPrefs={sid:'any',minTier:5,release:false,pushAt:1});pr.sid=$('#autotarget')?$('#autotarget').value:pr.sid;pr.minTier=$('#autotier')?+$('#autotier').value:pr.minTier;pr.pushAt=$('#autopush')?+$('#autopush').value:pr.pushAt;pr.release=$('#autorelease')?$('#autorelease').checked:pr.release}
  const b=t.closest('[data-act="bookmark"],[data-act="autosell"],[data-act="autochaff"]');if(b)act(b.dataset.act,b.dataset,b)});
 document.addEventListener('keydown',e=>{
- if(e.target.matches('input,select,textarea')&&!(e.key==='Enter'&&UI.screen==='intro'))return;
+ if(e.target.matches('select')){if(/^[a-z0-9]$/i.test(e.key)&&!e.ctrlKey&&!e.metaKey&&!e.altKey)e.target.blur();else return} // letter and number shortcuts work from a menu; arrows, Enter and Space still drive the menu
+ else if(e.target.matches('input,textarea')&&!(e.key==='Enter'&&UI.screen==='intro'))return;
  const k=e.key.toLowerCase();const scr=UI.screen;const click=sel=>{const b=document.querySelector(sel);if(b&&!b.disabled){e.preventDefault();b.click()}};
  if(scr==='intro'&&k==='enter')return click('[data-act="newgame"]');
  if(!S)return;
