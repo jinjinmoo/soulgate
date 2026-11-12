@@ -428,6 +428,28 @@ button.cache:not(:disabled):hover .chest{transform:translateY(-2px)}
 @media(max-width:480px){.bicobig{width:72px;height:72px;background-size:1728px 1584px;background-position:calc(var(--bx)*-2.25px) calc(var(--by)*-2.25px)}}
 .tearwarn{border:2px solid #ffb36b;background:rgba(255,179,107,.12);color:var(--ink);border-radius:6px;padding:8px 10px;margin:0 0 8px;font-size:13px;line-height:1.4}.tearwarn.now{border-color:#ff5a5a;background:rgba(255,90,90,.16);animation:tearpulse 1s ease-in-out infinite}@keyframes tearpulse{50%{box-shadow:0 0 0 3px rgba(255,90,90,.35)}}@media(prefers-reduced-motion:reduce){.tearwarn.now{animation:none}}
 .regmeta{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 6px}.regmeta .chip,.chip.twist{font-size:11px}.chip.twist{color:#c9a7ff;border-color:#8a6fd0}.chip.match-ok{color:var(--soul);border-color:var(--soul-dim)}.chip.match-hard{color:#ffb36b;border-color:#ffb36b}.chip.match-bad{color:#ff7a7a;border-color:#ff7a7a}.chip.done{color:var(--gold);border-color:var(--gold)}
+/* ---- widescreen: use the room on large monitors ---- */
+@media (min-width:1600px){
+ .shell{max-width:min(1780px,calc(100vw - 96px))}
+ #main>p,#main>.coach,#main>.msg{max-width:120ch}
+ .regions{grid-template-columns:repeat(3,minmax(0,1fr))}
+ /* a column of three or more panels flows into two, beside the panel next to it */
+ .grid2:has(> .stack:first-child > .box:nth-child(3)){grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+ .grid2 > .stack:first-child:has(> .box:nth-child(3)){display:block;columns:2;column-gap:20px}
+ .grid2 > .stack:first-child:has(> .box:nth-child(3)) > *{break-inside:avoid;margin-bottom:14px}
+ .huntwrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,420px);gap:22px;align-items:start}
+ .huntside .tankh{margin-top:0!important}
+ .huntside .tank{grid-template-columns:minmax(0,1fr)}
+ .huntside{position:sticky;top:12px}
+ .areaview{grid-template-columns:minmax(0,420px) minmax(0,1fr) minmax(0,260px)}
+ .areaview canvas.pix,.region canvas.pix{width:100%;height:auto}
+ .regset .cards,.cards{grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
+}
+@media (min-width:2300px){
+ .shell{max-width:min(2200px,calc(100vw - 160px))}
+ .regions{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .huntwrap{grid-template-columns:minmax(0,1fr) minmax(380px,480px)}
+}
 .namebox{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.namebox input{flex:1 1 160px;min-width:0}
 </style>
 
@@ -1776,6 +1798,7 @@ function vHunt(){const e=S.exp;const R=REGIONS[e.region];const A=R.areas[e.area]
  return`${lowTimeModal(e)}${UI.msg?`<div class="msg ${UI.msg.c||''}" style="margin-bottom:14px">${UI.msg.t}</div>`:''}
  ${S.stats.caught<3?`<div class="coach"><b>Picking bait.</b> Every soul eats one main kind of food and wants bait of one size. Gold lines in the field feed give it away ("tears into the flesh of a large creature" means Flesh, Large). Baits marked ★ suit what you've learned lives here. The right bait gets bites many times faster.</div>`:''}
  <p class="muted" style="font-size:13px;margin:-4px 0 10px">${worldLine(e)}${isHot(e)?' · <b style="color:var(--gold)">You are in today\'s hotspot: more bites, rarer tiers.</b>':''}</p>
+ <div class="huntwrap"><div class="huntmain">
  <div class="trapbar" id="trapbar"><b style="font-family:var(--f-body);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Trapping</b>
   <label for="trapmin" title="A trap starts quiet and draws more as its scent spreads. The longer it soaks before a bite, the rarer the catch and the more bait wear.">Time <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">(1–3: quick bites, no soak · 4+: starts quiet, then rarer catches · past 10 the bonus stops growing, it just saves recasting)</span></label><select id="trapmin">${(L=>{const want=Math.min(UI.lastMins||10,maxTrap());const pick=L.filter(x=>x<=want).pop()||L[0];return L.map(x=>`<option value="${x}" ${pick===x?'selected':''}>${x} min</option>`).join('')})(trapSteps())}</select>
   <label for="trapbait">Bait</label><span id="trapico">${bIco(bag.find(b=>b.uid===sel))}</span><select id="trapbait" style="min-width:0;flex:1 1 260px">${(()=>{const best=bestBaitsHere(bag);return bag.map(b=>`<option value="${b.uid}" ${b.uid===sel?'selected':''}>${best.has(b.uid)?'★ ':''}${esc(baitLabel(b))}</option>`).join('')})()||'<option>No baits</option>'}</select>
@@ -1795,7 +1818,7 @@ function vHunt(){const e=S.exp;const R=REGIONS[e.region];const A=R.areas[e.area]
   <div><h3>Field log</h3><div class="log">${e.log.slice(0,8).map(l=>`<div class="${l.hi===true?'hi':l.hi||''}">${esc(l.t)}</div>`).join('')}</div></div></div>
  <div class="stack"><h3>Move to</h3><div class="movelist">${R.areas.map((a,ai)=>ai===e.area?'':S.areas[areaKey(e.region,ai)]?`<button class="btn" data-act="move" data-ai="${ai}"><span>${a.n}${(e.echoes||[]).some(x=>x.area===ai)?' <span style="color:var(--gold)">· echo</span>':''}</span><span class="muted">${moveCost(e.area,ai)}m</span></button>`:`<button class="btn" disabled><span>${a.n}</span><span>Locked</span></button>`).join('')}</div>
   ${cashoutBox(e)}</div></div>
- <h3 style="margin-top:18px">Soul Tank · ${e.tank.length}/${TANK_MAX}${e.tank.length>TANK_MAX?` <span style="color:var(--crit);font-size:14px">· ${e.tank.length-TANK_MAX} over. Release extras to leave.</span>`:''}</h3>${tankHtml()}`}
+ </div><div class="huntside"><h3 class="tankh" style="margin-top:18px">Soul Tank · ${e.tank.length}/${TANK_MAX}${e.tank.length>TANK_MAX?` <span style="color:var(--crit);font-size:14px">· ${e.tank.length-TANK_MAX} over. Release extras to leave.</span>`:''}</h3>${tankHtml()}</div></div>`}
 
 
 /* ================= AUTO-MODE: trap + fight on repeat with one bait ================= */
